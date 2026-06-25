@@ -140,7 +140,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
   </div>
   <div class="card">
     <div class="table-wrap"><table id="tbl-estoque">
-      <thead><tr><th style="width:40px">#</th><th style="width:90px">Marca</th><th>Produto</th><th style="width:110px">Especificação</th><th style="width:80px">Linha</th><th style="width:45px">Un.</th><th style="width:70px">Qtd</th><th style="width:50px">Mín.</th><th style="width:50px">Máx.</th><th style="width:90px" class="col-gestor">Custo</th><th style="width:90px" class="col-gestor">Atacado</th><th style="width:90px">Status</th><th style="width:60px"></th></tr></thead>
+      <thead><tr><th style="width:40px">#</th><th style="width:90px">Marca</th><th>Produto</th><th style="width:110px">Especificação</th><th style="width:80px">Linha</th><th style="width:45px">Un.</th><th style="width:70px">Qtd</th><th style="width:50px">Mín.</th><th style="width:50px">Máx.</th><th style="width:90px" class="col-gestor">Custo</th><th style="width:90px" class="col-gestor">Atacado</th><th style="width:90px">Preço venda</th><th style="width:90px">Status</th><th style="width:60px"></th></tr></thead>
       <tbody></tbody>
     </table></div>
   </div>
@@ -514,6 +514,7 @@ function renderEstoque(){
       <td style="color:var(--text3)">${p.max}</td>
       <td style="color:var(--text3)" class="col-gestor">${p.custo?fmt(p.custo):'—'}</td>
       <td class="col-gestor">${p.atacado?fmt(p.atacado):'—'}</td>
+      <td>${p.preco?fmt(p.preco):'—'}</td>
       <td>${badgeStatus(p)}</td>
       <td>${(!perfilAtual||perfilAtual.tipo==='gestor')?'<button class="btn btn-sm" onclick="openEdit('+idx+')">Editar</button>':''}</td>
     </tr>`;
