@@ -291,8 +291,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
         <th style="width:100px">Valor compra</th>
         <th style="width:100px">Valor venda</th>
         <th style="width:110px">Data recebimento</th>
-        <th style="width:90px">Status</th>
-        <th style="width:40px"></th>
+        <th style="width:130px">Status</th>
       </tr></thead>
       <tbody></tbody>
     </table></div>
@@ -387,7 +386,7 @@ function fazerLogin(){
   load();renderAll();
 }
 
-const KEY='amber-v8';
+const KEY='amber-v9';
 let db={produtos:[],movs:[],boletos:[]};
 let editIdx=null;
 
@@ -866,7 +865,7 @@ function renderCompras(){
   el.innerHTML=comprasFiltradas.map((c,i)=>{
     const realIdx=db.compras.indexOf(c);
     const aguardando=c.data==='Aguardando'||!c.data;
-    const statusBadge=aguardando?'<span class="badge badge-warn">Aguardando</span>':'<span class="badge badge-ok">Recebido</span>';
+
     const totalCompra=(c.vcompra||0)*(c.qtd||0);
     return `<tr>
       <td style="color:var(--text3)">${c.cod}</td>
@@ -877,9 +876,11 @@ function renderCompras(){
       <td>${c.vvenda?fmt(c.vvenda):'—'}</td>
       <td style="color:var(--text3)">${c.data||'—'}</td>
       <td>${statusBadge}</td>
-      <td style="white-space:nowrap;display:flex;gap:4px;">
-        ${aguardando ? `<button class="btn btn-sm" style="background:#E6F1FB;color:#0C447C;border-color:#C3D9F5;font-size:11px;" onclick="marcarRecebido(${realIdx})">✓ Recebido</button>` : ''}
-        <button class="btn btn-danger btn-sm" onclick="removerCompra(${realIdx})">✕</button>
+      <td style="white-space:nowrap">
+        ${aguardando
+          ? `<button class="btn btn-sm" style="background:#E6F1FB;color:#0C447C;border-color:#C3D9F5;font-size:11px;width:100%" onclick="marcarRecebido(${realIdx})">✓ Marcar recebido</button>`
+          : `<span class="badge badge-ok" style="display:inline-flex;align-items:center;justify-content:space-between;width:100%">Recebido <button onclick="removerCompra(${realIdx})" style="background:none;border:none;cursor:pointer;color:inherit;font-size:12px;padding:0 0 0 6px">✕</button></span>`
+        }
       </td>
     </tr>`;
   }).join('');
