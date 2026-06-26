@@ -482,6 +482,34 @@ const BOLETOS_INIT=[
 function parseDateBR(s){if(!s||s==='—')return new Date(0);const p=s.split('/');if(p.length===3)return new Date(+p[2],+p[1]-1,+p[0]);return new Date(0);}
 function getMesAno(s){const d=parseDateBR(s);if(!s||isNaN(d))return'—';return d.toLocaleString('pt-BR',{month:'long',year:'numeric'}).replace(/^./,c=>c.toUpperCase());}
 
+const COMPRAS_INIT=[
+  {cod:'81307',    desc:'DUCHA ELETRON. TOP JET LOR. 127/5500',    vcompra:165.86, un:'UN', qtd:20,  vvenda:0,      data:'09/06/2026'},
+  {cod:'146260',   desc:'DUCHA 4T LOR. TOP JET 220/6400W',         vcompra:123.55, un:'UN', qtd:55,  vvenda:0,      data:'09/06/2026'},
+  {cod:'146271',   desc:'DUCHA ELETRON. TOP JET LOR. 220/6800W',   vcompra:165.86, un:'UN', qtd:20,  vvenda:0,      data:'09/06/2026'},
+  {cod:'71653',    desc:'DUCHA ELETRON. ADVANCED LORE. 127/5500W', vcompra:192.11, un:'UN', qtd:20,  vvenda:0,      data:'09/06/2026'},
+  {cod:'71654',    desc:'DUCHA ELETRON. ADVANCED LORE. 220/7500W', vcompra:192.11, un:'UN', qtd:20,  vvenda:0,      data:'09/06/2026'},
+  {cod:'94490',    desc:'DUCHA ELETRON. SHOWER LORE. 220/7500',    vcompra:116.89, un:'UN', qtd:20,  vvenda:0,      data:'09/06/2026'},
+  {cod:'77302-6',  desc:'DUCHA 4T LOR BELA DUCHA 127/5500W',       vcompra:45.15,  un:'UN', qtd:200, vvenda:0,      data:'18/06/2026'},
+  {cod:'77724-2',  desc:'RESIST.DUCH.LOR.BELA/FASC 127 4T 5500',   vcompra:26.75,  un:'UN', qtd:15,  vvenda:39.06,  data:'17/06/2026'},
+  {cod:'77723-4',  desc:'RESIST.DUCH.LOR.BELA/FASC 220 4T 6800',   vcompra:26.75,  un:'UN', qtd:15,  vvenda:39.06,  data:'17/06/2026'},
+  {cod:'81621-3',  desc:'RESIST.DUCH.LOR.4T 127/5500 SIMILAR',     vcompra:10.69,  un:'UN', qtd:171, vvenda:15.61,  data:'Aguardando'},
+  {cod:'81622-1',  desc:'RESIST.DUCH.LOR.4T 220/6800 SIMILAR',     vcompra:10.69,  un:'UN', qtd:76,  vvenda:15.61,  data:'17/06/2026'},
+  {cod:'121111-8', desc:'RESIST.DUCH.PRAT.MAXIDUCH 127/5500',       vcompra:6.84,   un:'UN', qtd:4,   vvenda:9.99,   data:'17/06/2026'},
+  {cod:'121110-8', desc:'RESIST.DUCH.PRAT.MAXIDUCH 220/5500',       vcompra:6.84,   un:'UN', qtd:175, vvenda:9.99,   data:'Aguardando'},
+  {cod:'81624-8',  desc:'RESIST.DUCH.LOR.ADVAN.220 SIMILAR 7500',   vcompra:15.12,  un:'UN', qtd:70,  vvenda:22.08,  data:'Aguardando'},
+  {cod:'77168-6',  desc:'RESIST.DUCH.LOR.ADVAN/TOPJ 127/5500',     vcompra:28.41,  un:'UN', qtd:20,  vvenda:41.48,  data:'17/06/2026'},
+  {cod:'77169-4',  desc:'RESIST.DUCH.LOR.ADVAN/TOPJ 220/6400',     vcompra:28.41,  un:'UN', qtd:20,  vvenda:41.48,  data:'17/06/2026'},
+  {cod:'22598-3',  desc:'RESIST.DUCH.LOR.ELETR.ADV.127/5500',      vcompra:31.58,  un:'UN', qtd:20,  vvenda:46.11,  data:'17/06/2026'},
+  {cod:'22599-1',  desc:'RESIST.DUCH.LOR.ELETR.ADV.220/7500',      vcompra:31.58,  un:'UN', qtd:20,  vvenda:46.11,  data:'17/06/2026'},
+  {cod:'154212-0', desc:'RESIST.DUCH.ACQUA PRAT 220/7800',          vcompra:38.24,  un:'UN', qtd:15,  vvenda:55.83,  data:'Aguardando'},
+  {cod:'77591-6',  desc:'RESIST.DUCH.LOR.3T 127/5500 C10',         vcompra:132.97, un:'SC', qtd:3,   vvenda:194.14, data:'17/06/2026'},
+  {cod:'77593-2',  desc:'RESIST.DUCH.LOR.3T 220/5500 C10',         vcompra:132.97, un:'SC', qtd:3,   vvenda:194.14, data:'17/06/2026'},
+  {cod:'—',        desc:'Bella Ducha 127V/5500W',                   vcompra:0,      un:'UN', qtd:200, vvenda:0,      data:'18/06/2026'},
+  {cod:'—',        desc:'Bella Ducha 220V/5500W',                   vcompra:0,      un:'UN', qtd:200, vvenda:0,      data:'18/06/2026'},
+  {cod:'—',        desc:'Maxi Ducha 127V/5500W',                    vcompra:0,      un:'UN', qtd:200, vvenda:0,      data:'22/06/2026'},
+  {cod:'—',        desc:'Maxi Ducha 220V/5500W',                    vcompra:0,      un:'UN', qtd:200, vvenda:0,      data:'22/06/2026'},
+];
+
 function load(){
   const saved=localStorage.getItem(KEY);
   if(saved){db=JSON.parse(saved);}
