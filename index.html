@@ -532,7 +532,7 @@ function showTab(id,btn){
   renderAll();
 }
 
-function renderAll(){renderMetrics();renderAlertas();renderLinhas();renderEstoque();renderHistorico();renderBoletos();renderCompras();populateProdutoSelect();populateRespSelect();populateMesSelect();}
+function renderAll(){renderMetrics();renderAlertas();renderLinhas();renderEstoque();renderHistorico();renderBoletos();if(typeof renderCompras==='function')renderCompras();populateProdutoSelect();populateRespSelect();populateMesSelect();}
 
 function renderMetrics(){
   const total=db.produtos.length;
@@ -823,6 +823,51 @@ function exportCSV(){
 }
 
 load();renderAll();
+
+function renderCompras(){
+  const el=document.querySelector('#tbl-compras tbody');
+  if(!el)return;
+  if(!db.compras||!db.compras.length){el.innerHTML='<tr><td colspan="9" class="empty">Nenhuma compra registrada.</td></tr>';return;}
+  el.innerHTML=db.compras.map((c,i)=>{
+    const aguardando=c.data==='Aguardando'||!c.data;
+    const statusBadge=aguardando?'<span class="badge badge-warn">Aguardando</span>':'<span class="badge badge-ok">Recebido</span>';
+    const totalCompra=(c.vcompra||0)*(c.qtd||0);
+    return `<tr>
+      <td style="color:var(--text3)">${c.cod}</td>
+      <td><strong>${c.desc}</strong></td>
+      <td>${c.un}</td>
+      <td>${c.qtd}</td>
+      <td>${c.vcompra?fmt(c.vcompra)+'<br><small style="color:var(--text3)">Total: '+fmt(totalCompra)+'</small>':'—'}</td>
+      <td>${c.vvenda?fmt(c.vvenda):'—'}</td>
+      <td style="color:var(--text3)">${c.data||'—'}</td>
+      <td>${statusBadge}</td>
+      <td><button class="btn btn-danger btn-sm" onclick="removerCompra(${i})">✕</button></td>
+    </tr>`;
+  }).join('');
+}
+function openNovaCompra(){document.getElementById('modal-compra').classList.add('open');}
+function closeModalCompra(){document.getElementById('modal-compra').classList.remove('open');}
+function salvarCompra(){
+  const cod=document.getElementById('c-cod').value.trim()||'—';
+  const desc=document.getElementById('c-desc').value.trim();
+  const un=document.getElementById('c-un').value;
+  const qtd=parseInt(document.getElementById('c-qtd').value)||0;
+  const vcompra=parseFloat(document.getElementById('c-vcompra').value)||0;
+  const vvenda=parseFloat(document.getElementById('c-vvenda').value)||0;
+  const dataRaw=document.getElementById('c-data').value;
+  const data=dataRaw?new Date(dataRaw+'T12:00:00').toLocaleDateString('pt-BR'):'Aguardando';
+  if(!desc)return;
+  if(!db.compras)db.compras=[];
+  db.compras.push({cod,desc,un,qtd,vcompra,vvenda,data});
+  save();closeModalCompra();
+  ['c-cod','c-desc','c-qtd','c-vcompra','c-vvenda','c-data'].forEach(id=>document.getElementById(id).value='');
+  renderCompras();
+}
+function removerCompra(i){
+  if(!confirm('Remover esta compra?'))return;
+  db.compras.splice(i,1);save();renderCompras();
+}
+
 </script>
 </body>
 </html>
