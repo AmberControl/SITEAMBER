@@ -875,7 +875,6 @@ function renderCompras(){
       <td>${c.vcompra?fmt(c.vcompra)+'<br><small style="color:var(--text3)">Total: '+fmt(totalCompra)+'</small>':'—'}</td>
       <td>${c.vvenda?fmt(c.vvenda):'—'}</td>
       <td style="color:var(--text3)">${c.data||'—'}</td>
-      <td>${statusBadge}</td>
       <td style="white-space:nowrap">
         ${aguardando
           ? `<button class="btn btn-sm" style="background:#E6F1FB;color:#0C447C;border-color:#C3D9F5;font-size:11px;width:100%" onclick="marcarRecebido(${realIdx})">✓ Marcar recebido</button>`
