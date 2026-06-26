@@ -422,6 +422,33 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
     </div>
   </div>
 </div>
+
+<!-- MODAL MARCAR BOLETO COMO PAGO -->
+<div class="modal-overlay" id="modal-boleto-pago">
+  <div class="modal" style="width:420px">
+    <div class="modal-title">✓ Marcar boleto como pago</div>
+    <div id="boleto-pago-info" style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px;font-size:13px;"></div>
+    <div class="form-grid">
+      <div class="field"><label>Data do pagamento</label><input id="bp-data" type="date"></div>
+      <div class="field"><label>Forma de pagamento</label>
+        <select id="bp-pgto">
+          <option value="PIX">PIX</option>
+          <option value="Dinheiro">Dinheiro</option>
+          <option value="Transferência">Transferência</option>
+          <option value="Cartão de crédito">Cartão de crédito</option>
+          <option value="Cartão de débito">Cartão de débito</option>
+        </select>
+      </div>
+    </div>
+    <div class="field" style="margin-bottom:12px"><label>Observação</label>
+      <input id="bp-obs" placeholder="NF, referência, depósito...">
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModalBoletoPago()">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarBoletoPago()">✓ Confirmar pagamento</button>
+    </div>
+  </div>
+</div>
 </main>
 
 <!-- MODAL EDITAR -->
@@ -487,7 +514,7 @@ function fazerLogin(){
   load();renderAll();
 }
 
-const KEY='amber-v16';
+const KEY='amber-v17';
 let db={produtos:[],movs:[],boletos:[]};
 let editIdx=null;
 
@@ -1028,7 +1055,8 @@ function renderBoletos(){
             <td><span class="badge" style="background:${c.bg};color:${c.color}">${b.pgto||'Boleto'}</span></td>
             <td><strong>${fmt(b.val)}</strong></td>
             <td style="color:var(--text3)">${b.obs||'—'}</td>
-            <td style="white-space:nowrap;display:flex;gap:4px">
+            <td style="white-space:nowrap;display:flex;gap:4px;flex-wrap:wrap">
+              ${!receb ? `<button class="btn btn-sm" style="font-size:11px;background:#EAF3DE;color:#27500A;border-color:#C3E6B0" onclick="marcarBoletoRecebido(${idx})">✓ Pago</button>` : ''}
               <button class="btn btn-sm" style="font-size:11px" onclick="editarBoleto(${idx})">✎</button>
               <button class="btn btn-danger btn-sm" onclick="removerBoleto(${idx})">✕</button>
             </td>
@@ -1298,6 +1326,44 @@ function salvarEditBoleto() {
   save();
   closeModalEditBoleto();
   renderBoletos();
+}
+
+
+let _boletoIdxPago = null;
+
+function marcarBoletoRecebido(idx) {
+  _boletoIdxPago = idx;
+  const b = db.boletos[idx];
+  document.getElementById('boleto-pago-info').innerHTML = 
+    `<strong>${b.cli}</strong><br>Valor: <strong>${fmt(b.val)}</strong> | Vencimento: ${b.venc}<br><small style="color:var(--text3)">${b.obs||''}</small>`;
+  // Set today as default payment date
+  const today = new Date().toISOString().split('T')[0];
+  document.getElementById('bp-data').value = today;
+  document.getElementById('bp-obs').value = b.obs||'';
+  document.getElementById('modal-boleto-pago').classList.add('open');
+}
+
+function closeModalBoletoPago() {
+  document.getElementById('modal-boleto-pago').classList.remove('open');
+  _boletoIdxPago = null;
+}
+
+function confirmarBoletoPago() {
+  if(_boletoIdxPago === null) return;
+  const b = db.boletos[_boletoIdxPago];
+  const dataRaw = document.getElementById('bp-data').value;
+  const pgto = document.getElementById('bp-pgto').value;
+  const obs = document.getElementById('bp-obs').value.trim();
+  
+  // Update the boleto
+  b.pgto = pgto;
+  if(dataRaw) b.venc = new Date(dataRaw+'T12:00:00').toLocaleDateString('pt-BR');
+  b.obs = (obs ? obs + ' — ' : '') + 'PAGO';
+  
+  save();
+  closeModalBoletoPago();
+  renderBoletos();
+  alert('✓ Boleto de ' + b.cli + ' marcado como pago via ' + pgto + '!');
 }
 
 </script>
