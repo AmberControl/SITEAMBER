@@ -789,7 +789,7 @@ function registrarMov(){
   db.movs.push({data:now,prod:p.nome,espec:p.espec,tipo,qtd,resp,empresa,cnpj,valor,pgto,obs:obsFinal});
   // Auto-add to recebimentos if it's a sale with payment
   if(tipo==='Saída'&&valor>0&&pgto&&pgto!=='—'){
-    const mesRec=getMesFromDate(now.split('/').reverse().join('-').replace(/\/g,'-'));
+    const mesRec=getMesFromDate(now);
     if(pgto==='Boleto'){
       // Boleto parcelas already handled above
     } else {
