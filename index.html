@@ -210,7 +210,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
       <option value="">Entradas e saídas</option>
       <option value="Entrada">Só entradas</option><option value="Saída">Só saídas</option>
     </select>
-    <select id="h-resp" onchange="renderHistorico()"><option value="">Todos os responsáveis</option></select>
+    <select id="h-resp" onchange="renderHistorico()" class="col-gestor"><option value="">Todos os responsáveis</option></select>
     <div style="display:flex;align-items:center;gap:4px;font-size:12px;color:var(--text3)">
       <span>De</span><input id="h-data-ini" type="date" style="max-width:140px" onchange="renderHistorico()">
       <span>até</span><input id="h-data-fim" type="date" style="max-width:140px" onchange="renderHistorico()">
@@ -506,7 +506,8 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
           <span class="card-title">Prévia do orçamento</span>
           <div style="display:flex;gap:6px">
             <button class="btn btn-sm" onclick="limparOrc()">🗑 Limpar</button>
-            <button class="btn btn-primary btn-sm" onclick="gerarPDF()">📄 Gerar PDF</button>
+            <button class="btn btn-sm" style="background:#E6F1FB;color:#0C447C;border-color:#C3D9F5" onclick="gerarPDF()">📄 PDF</button>
+            <button class="btn btn-primary btn-sm" onclick="confirmarPedido()">✓ Confirmar Pedido</button>
           </div>
         </div>
         <div class="card-body" style="padding:0">
@@ -517,6 +518,76 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
       </div>
     </div>
 
+  </div>
+
+  <!-- Histórico de orçamentos -->
+  <div class="card" style="margin-top:16px">
+    <div class="card-header">
+      <span class="card-title">Histórico de orçamentos</span>
+      <div style="display:flex;gap:8px">
+        <input id="horc-busca" placeholder="Buscar cliente..." style="max-width:180px;font-size:12px" oninput="renderOrcHistorico()">
+        <select id="horc-vendedor" style="max-width:140px;font-size:12px" onchange="renderOrcHistorico()" class="col-gestor">
+          <option value="">Todos os vendedores</option>
+        </select>
+        <input id="horc-data-ini" type="date" style="max-width:140px;font-size:12px" onchange="renderOrcHistorico()">
+        <input id="horc-data-fim" type="date" style="max-width:140px;font-size:12px" onchange="renderOrcHistorico()">
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table id="tbl-orc-hist">
+        <thead><tr>
+          <th style="width:90px">Nº Orç.</th>
+          <th style="width:80px">Data</th>
+          <th>Cliente</th>
+          <th style="width:80px">Vendedor</th>
+          <th>Produtos</th>
+          <th style="width:90px">Total</th>
+          <th style="width:80px">Status</th>
+          <th style="width:60px"></th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL CONFIRMAR PEDIDO -->
+<div class="modal-overlay" id="modal-pedido">
+  <div class="modal" style="width:500px">
+    <div class="modal-title">✓ Confirmar Pedido</div>
+    <div id="pedido-resumo" style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:16px;font-size:13px;max-height:200px;overflow-y:auto"></div>
+    <div class="form-grid">
+      <div class="field"><label>Forma de pagamento</label>
+        <select id="ped-pgto" onchange="togglePedidoBoleto()">
+          <option value="PIX">PIX</option>
+          <option value="Dinheiro">Dinheiro</option>
+          <option value="Cartão de crédito">Cartão de crédito</option>
+          <option value="Cartão de débito">Cartão de débito</option>
+          <option value="Boleto">Boleto</option>
+          <option value="Transferência">Transferência</option>
+          <option value="À vista">À vista</option>
+        </select>
+      </div>
+      <div class="field"><label>Data do pedido</label><input id="ped-data" type="date"></div>
+    </div>
+    <!-- Boleto parcelas -->
+    <div id="ped-boleto-fields" style="display:none;background:var(--amarelo);border-radius:var(--radius-sm);padding:12px;margin-bottom:12px;border:1px solid #FAC775;">
+      <div style="font-size:12px;font-weight:600;color:var(--amarelo-text);margin-bottom:8px">Parcelas do boleto</div>
+      <div id="ped-parcelas">
+        <div class="form-grid" style="margin-bottom:6px">
+          <div class="field"><label>Vencimento 1</label><input type="date" class="ped-venc"></div>
+          <div class="field"><label>Valor parcela 1 (R$)</label><input type="number" step="0.01" class="ped-val" placeholder="0,00"></div>
+        </div>
+      </div>
+      <button type="button" class="btn btn-sm" onclick="addPedParcela()">+ Parcela</button>
+    </div>
+    <div class="form-grid">
+      <div class="field" style="grid-column:1/-1"><label>Observação</label><input id="ped-obs" placeholder="NF, referência..."></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModalPedido()">Cancelar</button>
+      <button class="btn btn-primary" onclick="finalizarPedido()">✓ Confirmar e atualizar estoque</button>
+    </div>
   </div>
 </div>
 </main>
@@ -645,13 +716,13 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 
 <script>
 const PERFIS={
-  '1234amber':{tipo:'gestor',nome:'Gestor 1'},
-  '12345amber':{tipo:'gestor',nome:'Gestor 2'},
-  'VD@7mx2':{tipo:'vendedor',nome:'Vendedor 1'},
-  'KP#4nt8':{tipo:'vendedor',nome:'Vendedor 2'},
-  'ZR@9bw3':{tipo:'vendedor',nome:'Vendedor 3'},
-  'FG#5qs6':{tipo:'vendedor',nome:'Vendedor 4'},
-  'HJ@2yk1':{tipo:'vendedor',nome:'Vendedor 5'},
+  '1234amber': {tipo:'gestor',  nome:'Gestor 1'},
+  '12345amber':{tipo:'gestor',  nome:'Gestor 2'},
+  'VD@7mx2':   {tipo:'vendedor',nome:'Marcelo'},
+  'KP#4nt8':   {tipo:'vendedor',nome:'Átila'},
+  'ZR@9bw3':   {tipo:'vendedor',nome:'Lorena'},
+  'FG#5qs6':   {tipo:'vendedor',nome:'Charles'},
+  'HJ@2yk1':   {tipo:'vendedor',nome:'Reserva'},
 };
 let perfilAtual=null;
 
@@ -677,12 +748,27 @@ function fazerLogin(){
   // restringir vendedor
   if(perfil.tipo!=='gestor'){
     document.body.classList.add('vendedor-mode');
+    // Hide tabs not for vendedor
     document.querySelectorAll('.nav-btn').forEach(b=>{
       const t=b.getAttribute('onclick')||'';
-      if(t.includes('boletos')||t.includes('produtos'))b.style.display='none';
+      if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))
+        b.style.display='none';
     });
+    // Hide backup/restore buttons
     const csv=document.querySelector('button[onclick="exportCSV()"]');
     if(csv)csv.style.display='none';
+    document.querySelectorAll('button[onclick="exportBackup()"]').forEach(b=>b.style.display='none');
+    document.querySelectorAll('label').forEach(b=>{
+      if(b.textContent.includes('Restaurar'))b.style.display='none';
+    });
+    // On movimentar, hide Entrada option
+    const tipoSel=document.getElementById('m-tipo');
+    if(tipoSel){
+      Array.from(tipoSel.options).forEach(o=>{
+        if(o.value==='Entrada')o.style.display='none';
+      });
+      tipoSel.value='Saída';
+    }
   }
   load(); // load() will call renderAll() after Firebase sync
 }
@@ -723,15 +809,15 @@ const OUTROS=[
 ];
 
 const MOVS_INIT=[
-  {data:'19/05/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:150,resp:'MARCELO',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:8248,pgto:'PIX',obs:'Retirada Ok'},
-  {data:'26/05/2026',prod:'Bella Ducha',espec:'220V',tipo:'Saída',qtd:100,resp:'MARCELO',empresa:'Elétrica Shopp',cnpj:'—',valor:5499,pgto:'PIX CONTA JOSI',obs:'Retirada Ok'},
-  {data:'26/05/2026',prod:'Max Ducha',espec:'220V',tipo:'Saída',qtd:100,resp:'MARCELO',empresa:'Elétrica Shopp',cnpj:'—',valor:5299,pgto:'PIX CONTA JOSI',obs:'Retirada Ok'},
-  {data:'27/05/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:100,resp:'MARCELO',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:5299,pgto:'PIX',obs:'Retirada Ok'},
-  {data:'27/05/2026',prod:'Top Jet',espec:'220V',tipo:'Saída',qtd:50,resp:'MARCELO',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:5103,pgto:'PIX',obs:'Retirada Ok'},
+  {data:'19/05/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:150,resp:'Marcelo',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:8248,pgto:'PIX',obs:'Retirada Ok'},
+  {data:'26/05/2026',prod:'Bella Ducha',espec:'220V',tipo:'Saída',qtd:100,resp:'Marcelo',empresa:'Elétrica Shopp',cnpj:'—',valor:5499,pgto:'PIX CONTA JOSI',obs:'Retirada Ok'},
+  {data:'26/05/2026',prod:'Max Ducha',espec:'220V',tipo:'Saída',qtd:100,resp:'Marcelo',empresa:'Elétrica Shopp',cnpj:'—',valor:5299,pgto:'PIX CONTA JOSI',obs:'Retirada Ok'},
+  {data:'27/05/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:100,resp:'Marcelo',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:5299,pgto:'PIX',obs:'Retirada Ok'},
+  {data:'27/05/2026',prod:'Top Jet',espec:'220V',tipo:'Saída',qtd:50,resp:'Marcelo',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:5103,pgto:'PIX',obs:'Retirada Ok'},
   {data:'27/05/2026',prod:'Papel Sulfite A4',espec:'Chamex',tipo:'Saída',qtd:400,resp:'Charles',empresa:'Colégio Santa Maria Minas',cnpj:'17.178.195/0022-91',valor:8800,pgto:'Boleto',obs:'Vencimento 26/06'},
   {data:'02/06/2026',prod:'Papel Sulfite A4',espec:'Chamex',tipo:'Saída',qtd:100,resp:'Charles',empresa:'Arte Page',cnpj:'39.233.905/0001-47',valor:2390,pgto:'Boleto',obs:'Vencimento 01/07'},
-  {data:'03/06/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:150,resp:'MARCELO',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:2649.5,pgto:'Cartão de crédito',obs:'Pago em loja — Retirada Ok'},
-  {data:'03/06/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:50,resp:'MARCELO',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:8248.5,pgto:'Cartão de crédito',obs:'Pago em loja — Retirada Ok'},
+  {data:'03/06/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:150,resp:'Marcelo',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:2649.5,pgto:'Cartão de crédito',obs:'Pago em loja — Retirada Ok'},
+  {data:'03/06/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:50,resp:'Marcelo',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:8248.5,pgto:'Cartão de crédito',obs:'Pago em loja — Retirada Ok'},
   {data:'09/06/2026',prod:'Cabo Vermelho',espec:'2,5mm²/100m',tipo:'Saída',qtd:3,resp:'Fernando',empresa:'Odeon',cnpj:'—',valor:0,pgto:'—',obs:''},
   {data:'09/06/2026',prod:'Cabo Amarelo',espec:'2,5mm²/100m',tipo:'Saída',qtd:3,resp:'Fernando',empresa:'Odeon',cnpj:'—',valor:0,pgto:'—',obs:''},
   {data:'09/06/2026',prod:'Cabo Azul',espec:'4,0mm²/100m',tipo:'Saída',qtd:2,resp:'Fernando',empresa:'Odeon',cnpj:'—',valor:0,pgto:'—',obs:''},
@@ -744,9 +830,9 @@ const MOVS_INIT=[
   {data:'10/06/2026',prod:'Ducha Eletron Advanced',espec:'220V',tipo:'Saída',qtd:1,resp:'Lorena',empresa:'Eletrowal LTDA',cnpj:'17.246.257/0001-20',valor:154.34,pgto:'PIX',obs:''},
   {data:'11/06/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:5,resp:'Átila',empresa:'—',cnpj:'—',valor:264.95,pgto:'Dinheiro',obs:'Aguardando Átila passar o valor'},
   {data:'11/06/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:5,resp:'Átila',empresa:'—',cnpj:'—',valor:274.95,pgto:'Dinheiro',obs:'Aguardando Átila passar o valor'},
-  {data:'12/06/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:3,resp:'LORENA',empresa:'Eletrocarneiro',cnpj:'16.613.085/0001-13',valor:158.97,pgto:'PIX',obs:''},
-  {data:'12/06/2026',prod:'Max Ducha',espec:'220V',tipo:'Saída',qtd:1,resp:'LORENA',empresa:'Eletrocarneiro',cnpj:'16.613.085/0001-13',valor:52.99,pgto:'PIX',obs:''},
-  {data:'12/06/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:150,resp:'MARCELO',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:8248.5,pgto:'Boleto',obs:'Venc. 18/06 e 22/06 — Liquidado — Retirada Ok'},
+  {data:'12/06/2026',prod:'Max Ducha',espec:'127V',tipo:'Saída',qtd:3,resp:'Lorena',empresa:'Eletrocarneiro',cnpj:'16.613.085/0001-13',valor:158.97,pgto:'PIX',obs:''},
+  {data:'12/06/2026',prod:'Max Ducha',espec:'220V',tipo:'Saída',qtd:1,resp:'Lorena',empresa:'Eletrocarneiro',cnpj:'16.613.085/0001-13',valor:52.99,pgto:'PIX',obs:''},
+  {data:'12/06/2026',prod:'Bella Ducha',espec:'127V',tipo:'Saída',qtd:150,resp:'Marcelo',empresa:'MGTEC',cnpj:'61.224.179/0001-55',valor:8248.5,pgto:'Boleto',obs:'Venc. 18/06 e 22/06 — Liquidado — Retirada Ok'},
   {data:'16/06/2026',prod:'Max Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:42,resp:'Átila',empresa:'Comercial Mahuacu Ltda',cnpj:'26.166.850/0001-58',valor:2225.58,pgto:'Boleto',obs:'Venc. 22/07, 06/08 e 21/08'},
   {data:'16/06/2026',prod:'Max Ducha',espec:'220V / 5500W',tipo:'Saída',qtd:10,resp:'Átila',empresa:'Comercial Mahuacu Ltda',cnpj:'26.166.850/0001-58',valor:549.90,pgto:'Boleto',obs:'Venc. 22/07, 06/08 e 21/08'},
   {data:'16/06/2026',prod:'Ducha Eletron Shower Loren',espec:'220V',tipo:'Saída',qtd:5,resp:'Átila',empresa:'Comercial Mahuacu Ltda',cnpj:'26.166.850/0001-58',valor:469.60,pgto:'Boleto',obs:'Venc. 22/07, 06/08 e 21/08'},
@@ -765,15 +851,15 @@ const MOVS_INIT=[
   {data:'23/06/2026',prod:'Bella Ducha',espec:'220V / 5500W',tipo:'Saída',qtd:3,resp:'Átila',empresa:'Charles Santana de Lima',cnpj:'52.759.296/0001-22',valor:164.97,pgto:'Dinheiro',obs:'Dinheiro com Lorena para depósito'},
   {data:'23/06/2026',prod:'Max Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:12,resp:'Átila',empresa:'RP Material de Construção LTDA',cnpj:'01.764.392/0001-28',valor:635.88,pgto:'À vista',obs:''},
   {data:'23/06/2026',prod:'Bella Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:6,resp:'Átila',empresa:'RP Material de Construção LTDA',cnpj:'01.764.392/0001-28',valor:329.94,pgto:'À vista',obs:''},
-  {data:'23/06/2026',prod:'Max Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:100,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:5299,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Max Ducha',espec:'220V / 6800W',tipo:'Saída',qtd:30,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1589.70,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Bella Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:100,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:5499,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Bella Ducha',espec:'220V / 6800W',tipo:'Saída',qtd:30,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1649.70,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Ducha Top Jet',espec:'127V',tipo:'Saída',qtd:20,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:2041.20,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Ducha Top Jet',espec:'220V',tipo:'Saída',qtd:20,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:2041.20,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Ducha Eletron Top Jet',espec:'127V / 5500W',tipo:'Saída',qtd:12,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1599,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Ducha Eletron Top Jet',espec:'220V / 6800W',tipo:'Saída',qtd:12,resp:'MARCELO',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1599,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
-  {data:'23/06/2026',prod:'Bella Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:1,resp:'POCO MIX',empresa:'Poco Mix',cnpj:'—',valor:0,pgto:'—',obs:''},
+  {data:'23/06/2026',prod:'Max Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:100,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:5299,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Max Ducha',espec:'220V / 6800W',tipo:'Saída',qtd:30,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1589.70,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Bella Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:100,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:5499,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Bella Ducha',espec:'220V / 6800W',tipo:'Saída',qtd:30,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1649.70,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Ducha Top Jet',espec:'127V',tipo:'Saída',qtd:20,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:2041.20,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Ducha Top Jet',espec:'220V',tipo:'Saída',qtd:20,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:2041.20,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Ducha Eletron Top Jet',espec:'127V / 5500W',tipo:'Saída',qtd:12,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1599,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Ducha Eletron Top Jet',espec:'220V / 6800W',tipo:'Saída',qtd:12,resp:'Marcelo',empresa:'Agência 2 Irmãos e Com LTDA',cnpj:'51.078.240/0001-40',valor:1599,pgto:'Boleto',obs:'Venc. 24/07 e 08/08 — Central Buritis'},
+  {data:'23/06/2026',prod:'Bella Ducha',espec:'127V / 5500W',tipo:'Saída',qtd:1,resp:'Reserva',empresa:'Poco Mix',cnpj:'—',valor:0,pgto:'—',obs:''},
   {data:'23/06/2026',prod:'Papel Sulfite A4',espec:'Chamex',tipo:'Saída',qtd:400,resp:'Charles',empresa:'Colégio Santa Maria Minas',cnpj:'17.178.195/0022-91',valor:8800,pgto:'Boleto',obs:'Vencimento 23/07 — Retirada Ok'},
 ];
 
@@ -886,11 +972,13 @@ function loadFromLocalStorage(){
     if (!db.boletos) db.boletos = [];
     if (!db.movs) db.movs = [];
     if (!db.produtos) db.produtos = [];
+    if (!db.orcamentos) db.orcamentos = [];
   } else {
     db.produtos=[...DUCHA,...CABO,...OUTROS];
     db.movs=[...MOVS_INIT];
     db.boletos=[...BOLETOS_INIT];
     db.compras=[...COMPRAS_INIT];
+    db.orcamentos=[];
   }
   if (perfilAtual) renderAll();
 }
@@ -918,6 +1006,17 @@ function badgeStatus(p){const s=status(p);if(s==='crit')return'<span class="badg
 function fmt(n){if(!n&&n!==0)return'—';return'R$ '+Number(n).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});}
 
 function showTab(id,btn){
+  if(id==='orcamento'){
+    // Show all products when opening orcamento
+    setTimeout(()=>{
+      const busca=document.getElementById('orc-busca-prod');
+      if(busca&&busca.value===''){
+        busca.value=' ';
+        buscarProdOrc();
+        busca.value='';
+      }
+    },100);
+  }
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
   document.getElementById('tab-'+id).classList.add('active');
@@ -925,7 +1024,7 @@ function showTab(id,btn){
   renderAll();
 }
 
-function renderAll(){renderMetrics();renderAlertas();renderLinhas();renderEstoque();renderHistorico();renderBoletos();if(typeof renderCompras==='function')renderCompras();populateProdutoSelect();populateRespSelect();populateMesSelect();}
+function renderAll(){renderMetrics();renderAlertas();renderLinhas();renderEstoque();renderHistorico();renderBoletos();if(typeof renderCompras==='function')renderCompras();populateProdutoSelect();populateRespSelect();populateMesSelect();renderOrcHistorico();}
 
 function renderMetrics(){
   const total=db.produtos.length;
@@ -1139,6 +1238,11 @@ function renderHistorico(){
   let movs=[...db.movs]
     .sort((a,b)=>parseDateBR(a.data)-parseDateBR(b.data))
     .filter(m=>{
+      // Vendedor only sees their own sales
+      if(perfilAtual&&perfilAtual.tipo!=='gestor'){
+        if((m.resp||'').toLowerCase()!==perfilAtual.nome.toLowerCase())return false;
+        if(m.tipo!=='Saída')return false;
+      }
       if(busca&&!`${m.prod} ${m.empresa} ${m.obs}`.toLowerCase().includes(busca))return false;
       if(tipo&&m.tipo!==tipo)return false;
       if(resp&&m.resp!==resp)return false;
@@ -1628,6 +1732,7 @@ function importBackup(event) {
       if (!db.boletos) db.boletos = [];
       if (!db.movs) db.movs = [];
       if (!db.produtos) db.produtos = [];
+      if (!db.orcamentos) db.orcamentos = [];
       save();
       renderAll();
       alert('✓ Backup restaurado com sucesso!\n\nProdutos: ' + db.produtos.length + '\nMovimentações: ' + db.movs.length + '\nRecebimentos: ' + db.boletos.length);
@@ -1645,9 +1750,9 @@ let orcItems = [];
 let orcProdSelecionado = null;
 
 function buscarProdOrc() {
-  const busca = document.getElementById('orc-busca-prod').value.toLowerCase();
+  const busca = document.getElementById('orc-busca-prod').value.toLowerCase().trim();
   const lista = document.getElementById('orc-lista-prod');
-  if (!busca) { lista.style.display='none'; return; }
+  // Show all products if empty
   const ps = db.produtos.filter(p => `${p.nome} ${p.espec} ${p.marca}`.toLowerCase().includes(busca));
   if (!ps.length) { lista.innerHTML='<div class="empty" style="padding:10px">Nenhum produto encontrado</div>'; lista.style.display='block'; return; }
   lista.style.display = 'block';
@@ -1890,9 +1995,231 @@ function gerarPDF() {
 </p>
 `;
 
+  // Save to history
+  const orcSavedIdx = salvarOrcamentoHistorico();
+  window._lastOrcIdx = orcSavedIdx;
   const win = window.open('', '_blank');
   win.document.write(pdfHTML);
   win.document.close();
+}
+
+
+// ── ORÇAMENTO HISTORY & PEDIDO ────────────────────────────────────────────────
+
+function populateOrcVendedorSelect(){
+  const sel=document.getElementById('horc-vendedor');
+  if(!sel)return;
+  const cur=sel.value;
+  const vendedores=[...new Set((db.orcamentos||[]).map(o=>o.vendedor))].filter(Boolean).sort();
+  sel.innerHTML='<option value="">Todos os vendedores</option>'+
+    vendedores.map(v=>`<option value="${v}" ${v===cur?'selected':''}>${v}</option>`).join('');
+}
+
+function renderOrcHistorico(){
+  populateOrcVendedorSelect();
+  const el=document.querySelector('#tbl-orc-hist tbody');
+  if(!el)return;
+  const busca=(document.getElementById('horc-busca')||{value:''}).value.toLowerCase();
+  const vend=(document.getElementById('horc-vendedor')||{value:''}).value;
+  const ini=(document.getElementById('horc-data-ini')||{value:''}).value;
+  const fim=(document.getElementById('horc-data-fim')||{value:''}).value;
+
+  let orcs=[...(db.orcamentos||[])].sort((a,b)=>parseDateBR(b.data)-parseDateBR(a.data));
+
+  // Vendedor only sees their own
+  if(perfilAtual&&perfilAtual.tipo!=='gestor'){
+    orcs=orcs.filter(o=>(o.vendedor||'').toLowerCase()===perfilAtual.nome.toLowerCase());
+  }
+
+  orcs=orcs.filter(o=>{
+    if(busca&&!(o.cliente||'').toLowerCase().includes(busca))return false;
+    if(vend&&o.vendedor!==vend)return false;
+    if(ini){const d=parseDateBR(o.data);if(d<new Date(ini+'T00:00:00'))return false;}
+    if(fim){const d=parseDateBR(o.data);if(d>new Date(fim+'T23:59:59'))return false;}
+    return true;
+  });
+
+  if(!orcs.length){el.innerHTML='<tr><td colspan="7" class="empty">Nenhum orçamento encontrado.</td></tr>';return;}
+
+  el.innerHTML=orcs.map((o,i)=>{
+    const realIdx=(db.orcamentos||[]).indexOf(o);
+    const statusBadge=o.status==='Confirmado'
+      ?'<span class="badge badge-ok">Confirmado</span>'
+      :'<span class="badge badge-warn">Pendente</span>';
+    const itensDesc=o.itens.map(it=>`${it.qtd}x ${it.nome} ${it.espec}`).join(', ');
+    return`<tr>
+      <td style="color:var(--text3);font-size:11px">${o.num||'—'}</td>
+      <td style="color:var(--text3);white-space:nowrap">${o.data}</td>
+      <td><strong>${o.cliente||'—'}</strong></td>
+      <td>${o.vendedor||'—'}</td>
+      <td style="color:var(--text2);font-size:12px">${itensDesc}</td>
+      <td><strong>${fmt(o.total)}</strong></td>
+      <td>${statusBadge}</td>
+      <td style="display:flex;gap:4px">
+        ${o.status!=='Confirmado'?`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="confirmarPedidoFromHist(${realIdx})">✓ Pedido</button>`:''}
+        <button class="btn btn-danger btn-sm" onclick="removerOrcamento(${realIdx})">✕</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function salvarOrcamentoHistorico(){
+  if(!orcItems.length)return null;
+  if(!db.orcamentos)db.orcamentos=[];
+  const numOrcamento='ORC-'+new Date().getFullYear()+
+    ('0'+(new Date().getMonth()+1)).slice(-2)+
+    ('0'+new Date().getDate()).slice(-2)+'-'+
+    String(db.orcamentos.length+1).padStart(3,'0');
+  const orc={
+    num: numOrcamento,
+    data:new Date().toLocaleDateString('pt-BR'),
+    cliente:document.getElementById('orc-cli').value||'—',
+    cnpj:document.getElementById('orc-cnpj').value||'',
+    vendedor:perfilAtual?perfilAtual.nome:'—',
+    itens:orcItems.map(i=>({...i})),
+    total:orcItems.reduce((s,i)=>s+i.qtd*i.preco,0),
+    status:'Pendente'
+  };
+  db.orcamentos.push(orc);
+  save();
+  renderOrcHistorico();
+  return db.orcamentos.length-1; // return index
+}
+
+function removerOrcamento(idx){
+  if(!confirm('Remover este orçamento?'))return;
+  db.orcamentos.splice(idx,1);
+  save();
+  renderOrcHistorico();
+}
+
+function confirmarPedido(){
+  if(!orcItems.length){alert('Adicione produtos ao orçamento primeiro.');return;}
+  // Use existing saved orc or save new one
+  if(window._lastOrcIdx==null){
+    const idx=salvarOrcamentoHistorico();
+    window._pedidoOrcIdx=idx;
+  } else {
+    window._pedidoOrcIdx=window._lastOrcIdx;
+  }
+  // Open payment modal
+  const total=orcItems.reduce((s,i)=>s+i.qtd*i.preco,0);
+  const cli=document.getElementById('orc-cli').value||'—';
+  document.getElementById('pedido-resumo').innerHTML=`
+    <strong>${cli}</strong><br>
+    ${orcItems.map(i=>`${i.qtd}x ${i.nome} ${i.espec} — R$ ${(i.qtd*i.preco).toFixed(2).replace('.',',')}`).join('<br>')}
+    <br><strong style="color:var(--verde)">Total: ${fmt(total)}</strong>`;
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('ped-data').value=today;
+  document.getElementById('modal-pedido').classList.add('open');
+}
+
+function confirmarPedidoFromHist(idx){
+  const orc=db.orcamentos[idx];
+  if(!orc)return;
+  // Load orc items
+  orcItems=[...orc.itens];
+  document.getElementById('orc-cli').value=orc.cliente||'';
+  document.getElementById('orc-cnpj').value=orc.cnpj||'';
+  // Open payment modal
+  const total=orc.total;
+  document.getElementById('pedido-resumo').innerHTML=`
+    <strong>${orc.cliente}</strong><br>
+    ${orc.itens.map(i=>`${i.qtd}x ${i.nome} ${i.espec} — R$ ${(i.qtd*i.preco).toFixed(2).replace('.',',')}`).join('<br>')}
+    <br><strong style="color:var(--verde)">Total: ${fmt(total)}</strong>`;
+  const today=new Date().toISOString().split('T')[0];
+  document.getElementById('ped-data').value=today;
+  window._pedidoOrcIdx=idx;
+  document.getElementById('modal-pedido').classList.add('open');
+}
+
+function togglePedidoBoleto(){
+  const pgto=document.getElementById('ped-pgto').value;
+  document.getElementById('ped-boleto-fields').style.display=pgto==='Boleto'?'block':'none';
+}
+
+function addPedParcela(){
+  const container=document.getElementById('ped-parcelas');
+  const num=container.querySelectorAll('.form-grid').length+1;
+  const div=document.createElement('div');
+  div.className='form-grid';div.style.marginBottom='6px';
+  div.innerHTML=`<div class="field"><label>Vencimento ${num}</label><input type="date" class="ped-venc"></div>
+    <div class="field" style="display:flex;gap:6px;align-items:flex-end">
+      <div style="flex:1"><label>Valor ${num} (R$)</label><input type="number" step="0.01" class="ped-val" placeholder="0,00"></div>
+      <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.form-grid').remove()">✕</button>
+    </div>`;
+  container.appendChild(div);
+}
+
+function closeModalPedido(){
+  document.getElementById('modal-pedido').classList.remove('open');
+  window._pedidoOrcIdx=null;
+}
+
+function finalizarPedido(){
+  const pgto=document.getElementById('ped-pgto').value;
+  const dataRaw=document.getElementById('ped-data').value;
+  const obs=document.getElementById('ped-obs').value.trim();
+  const dataStr=dataRaw?new Date(dataRaw+'T12:00:00').toLocaleDateString('pt-BR'):new Date().toLocaleDateString('pt-BR');
+  const cli=document.getElementById('orc-cli').value||'—';
+  const cnpj=document.getElementById('orc-cnpj').value||'—';
+  const resp=perfilAtual?perfilAtual.nome:'—';
+  const total=orcItems.reduce((s,i)=>s+i.qtd*i.preco,0);
+  const mes=getMesFromDate(dataRaw||new Date().toISOString().split('T')[0]);
+
+  // 1. Deduct stock for each item
+  let estoqueOk=true;
+  orcItems.forEach(item=>{
+    const p=db.produtos.find(p=>p.nome===item.nome&&p.espec===item.espec);
+    if(p){
+      if(p.qtd<item.qtd){estoqueOk=false;}
+    }
+  });
+  if(!estoqueOk){
+    if(!confirm('Atenção: algum produto pode ter estoque insuficiente. Confirmar mesmo assim?'))return;
+  }
+
+  orcItems.forEach(item=>{
+    const p=db.produtos.find(p=>p.nome===item.nome&&p.espec===item.espec);
+    if(p){
+      p.qtd=Math.max(0,p.qtd-item.qtd);
+      db.movs.push({
+        data:dataStr,prod:p.nome,espec:p.espec,tipo:'Saída',qtd:item.qtd,
+        resp,empresa:cli,cnpj,valor:item.qtd*item.preco,pgto,
+        obs:obs||'Pedido via Orçamento'
+      });
+    }
+  });
+
+  // 2. Add to recebimentos
+  if(pgto==='Boleto'){
+    const vencs=[...document.querySelectorAll('.ped-venc')];
+    const vals=[...document.querySelectorAll('.ped-val')];
+    vencs.forEach((v,i)=>{
+      const vencDate=v.value;
+      const valParcela=parseFloat(vals[i]?.value)||0;
+      if(vencDate&&valParcela>0){
+        const vencStr=new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
+        const mesParcela=getMesFromDate(vencDate);
+        db.boletos.push({mes:mesParcela,venc:vencStr,cli,val:valParcela,pgto:'Boleto',obs:obs||'Pedido via Orçamento'});
+      }
+    });
+  } else {
+    db.boletos.push({mes,venc:dataStr,cli,val:total,pgto,obs:obs||'Pedido via Orçamento'});
+  }
+
+  // 3. Mark orcamento as confirmed
+  const orcIdx=window._pedidoOrcIdx;
+  if(orcIdx!=null&&db.orcamentos[orcIdx]){
+    db.orcamentos[orcIdx].status='Confirmado';
+    db.orcamentos[orcIdx].pgto=pgto;
+  }
+
+  save();
+  closeModalPedido();
+  limparOrc();
+  renderAll();
+  alert('✓ Pedido confirmado! Estoque atualizado e lançado nos recebimentos.');
 }
 
 </script>
@@ -1922,9 +2249,9 @@ let orcItems = [];
 let orcProdSelecionado = null;
 
 function buscarProdOrc() {
-  const busca = document.getElementById('orc-busca-prod').value.toLowerCase();
+  const busca = document.getElementById('orc-busca-prod').value.toLowerCase().trim();
   const lista = document.getElementById('orc-lista-prod');
-  if (!busca) { lista.style.display='none'; return; }
+  // Show all products if empty
   const ps = db.produtos.filter(p => `${p.nome} ${p.espec} ${p.marca}`.toLowerCase().includes(busca));
   if (!ps.length) { lista.innerHTML='<div class="empty" style="padding:10px">Nenhum produto encontrado</div>'; lista.style.display='block'; return; }
   lista.style.display = 'block';
