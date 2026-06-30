@@ -82,7 +82,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 <div id="login-screen">
   <div class="login-box">
     <div class="login-logo">
-      <img src="https://lorena510707.github.io/SITEAMBER/logo.jpeg" alt="Amber">
+      <img src="https://ambercontrol.github.io/SITEAMBER/logo.jpeg" alt="Amber">
     </div>
     <div class="login-title">Amber Comércio</div>
     <div class="login-sub">Controle de Estoque — Acesso restrito</div>
@@ -94,7 +94,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 
 <header>
   <div class="logo">
-    <img src="https://lorena510707.github.io/SITEAMBER/logo.jpeg" alt="Amber Comércio" style="height:44px;width:auto;border-radius:8px;">
+    <img src="https://ambercontrol.github.io/SITEAMBER/logo.jpeg" alt="Amber Comércio" style="height:44px;width:auto;border-radius:8px;">
     <span style="font-size:12px;color:var(--text3)">Controle de Estoque</span>
   </div>
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
@@ -1916,14 +1916,16 @@ function gerarPDF() {
   .total-row { background:#1D9E75!important; }
   .total-row td { color:white; font-weight:bold; font-size:14px; padding:10px 8px; border:none!important; }
   .footer { margin-top:30px; border-top:1px solid #ddd; padding-top:16px; display:flex; justify-content:space-between; font-size:11px; color:#888; }
-  .assinatura { text-align:center; margin-top:40px; }
-  .assinatura .linha { border-top:1px solid #333; width:200px; margin:0 auto 4px; }
-  @media print { body { padding:15px; } button { display:none; } }
+  @media print { 
+    body { padding:15px; } 
+    button { display:none; }
+    .footer { position: fixed; bottom: 20px; left: 30px; right: 30px; border-top:1px solid #ddd; padding-top:10px; }
+  }
 </style>
 </head>
 <body>
 <div class="header">
-  <div class="logo"><img src="https://lorena510707.github.io/SITEAMBER/logo.jpeg" alt="Amber Comércio"></div>
+  <div class="logo"><img src="https://ambercontrol.github.io/SITEAMBER/logo.jpeg" alt="Amber Comércio"></div>
   <div class="empresa">
     <strong>AMBER COMÉRCIO LTDA</strong><br>
     CNPJ: 61.224.719/0001-55<br>
@@ -1978,21 +1980,7 @@ function gerarPDF() {
   <div>AMBER COMÉRCIO LTDA | CNPJ: 61.224.719/0001-55</div>
 </div>
 
-<div class="assinatura">
-  <div class="linha"></div>
-  <div style="font-size:12px">AMBER COMÉRCIO LTDA</div>
-  <div style="font-size:11px;color:#888">Nome Fantasia: POCO MIX</div>
-</div>
 
-<br><br>
-<div style="text-align:center;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-  <button onclick="window.print()" style="background:#1D9E75;color:white;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px">
-    🖨 Imprimir / Salvar PDF
-  </button>
-</div>
-<p style="text-align:center;font-size:11px;color:#aaa;margin-top:12px">
-  Salve como PDF → abra no celular → compartilhe pelo WhatsApp
-</p>
 `;
 
   // Save to history
@@ -2001,6 +1989,7 @@ function gerarPDF() {
   const win = window.open('', '_blank');
   win.document.write(pdfHTML);
   win.document.close();
+  win.onload = function(){ win.print(); };
 }
 
 
@@ -2415,14 +2404,16 @@ function gerarPDF() {
   .total-row { background:#1D9E75!important; }
   .total-row td { color:white; font-weight:bold; font-size:14px; padding:10px 8px; border:none!important; }
   .footer { margin-top:30px; border-top:1px solid #ddd; padding-top:16px; display:flex; justify-content:space-between; font-size:11px; color:#888; }
-  .assinatura { text-align:center; margin-top:40px; }
-  .assinatura .linha { border-top:1px solid #333; width:200px; margin:0 auto 4px; }
-  @media print { body { padding:15px; } button { display:none; } }
+  @media print { 
+    body { padding:15px; } 
+    button { display:none; }
+    .footer { position: fixed; bottom: 20px; left: 30px; right: 30px; border-top:1px solid #ddd; padding-top:10px; }
+  }
 </style>
 </head>
 <body>
 <div class="header">
-  <div class="logo"><img src="https://lorena510707.github.io/SITEAMBER/logo.jpeg" alt="Amber Comércio"></div>
+  <div class="logo"><img src="https://ambercontrol.github.io/SITEAMBER/logo.jpeg" alt="Amber Comércio"></div>
   <div class="empresa">
     <strong>AMBER COMÉRCIO LTDA</strong><br>
     CNPJ: 61.224.719/0001-55<br>
@@ -2477,21 +2468,7 @@ function gerarPDF() {
   <div>AMBER COMÉRCIO LTDA | CNPJ: 61.224.719/0001-55</div>
 </div>
 
-<div class="assinatura">
-  <div class="linha"></div>
-  <div style="font-size:12px">AMBER COMÉRCIO LTDA</div>
-  <div style="font-size:11px;color:#888">Nome Fantasia: POCO MIX</div>
-</div>
 
-<br><br>
-<div style="text-align:center;display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
-  <button onclick="window.print()" style="background:#1D9E75;color:white;border:none;padding:10px 24px;border-radius:6px;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;gap:8px">
-    🖨 Imprimir / Salvar PDF
-  </button>
-</div>
-<p style="text-align:center;font-size:11px;color:#aaa;margin-top:12px">
-  Salve como PDF → abra no celular → compartilhe pelo WhatsApp
-</p>
 
 
 
