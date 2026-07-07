@@ -2238,6 +2238,8 @@ function renderOrcHistorico(){
     const realIdx=(db.orcamentos||[]).indexOf(o);
     const statusBadge=o.status==='Confirmado'
       ?'<span class="badge badge-ok">Confirmado</span>'
+      :o.status==='Cancelado'
+      ?'<span class="badge badge-crit">Cancelado</span>'
       :'<span class="badge badge-warn">Pendente</span>';
     const totalItens=o.itens.reduce((s,it)=>s+it.qtd,0);
     return`<tr>
@@ -2250,8 +2252,8 @@ function renderOrcHistorico(){
       <td>${statusBadge}</td>
       <td style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn btn-sm" style="font-size:11px" onclick="verDetalhesOrc(${realIdx})">👁 Ver</button>
-        ${o.status!=='Confirmado'?`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="confirmarPedidoFromHist(${realIdx})">✓ Pedido</button>`:''}
-        <button class="btn btn-danger btn-sm" onclick="removerOrcamento(${realIdx})">✕</button>
+        ${o.status==='Pendente'?`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="confirmarPedidoFromHist(${realIdx})">✓ Pedido</button>`:''}
+        ${(o.status!=='Cancelado'&&(!perfilAtual||perfilAtual.tipo==='gestor'))?`<button class="btn btn-danger btn-sm" onclick="removerOrcamento(${realIdx})">✕ Cancelar</button>`:''}
       </td>
     </tr>`;
   }).join('');
@@ -2282,10 +2284,71 @@ function salvarOrcamentoHistorico(){
 }
 
 function removerOrcamento(idx){
-  if(!confirm('Remover este orçamento?'))return;
+  const o=db.orcamentos[idx];
+  if(!o)return;
+
+  if(o.status==='Confirmado'){
+    const opcao=confirm(
+      'Este orçamento já foi CONFIRMADO.\n\n' +
+      'Clique OK para CANCELAR e reverter estoque/recebimentos.\n' +
+      'Clique Cancelar para não fazer nada.'
+    );
+    if(!opcao)return;
+    cancelarPedidoConfirmado(idx);
+    return;
+  }
+
+  if(!confirm('Remover orçamento "'+o.num+'"?'))return;
   db.orcamentos.splice(idx,1);
   save();
-  renderOrcHistorico();
+  renderAll();
+}
+
+function cancelarPedidoConfirmado(idx){
+  if(!perfilAtual||perfilAtual.tipo!=='gestor'){alert('Somente o Gestor pode cancelar pedidos confirmados.');return;}
+  const o=db.orcamentos[idx];
+  if(!o)return;
+
+  let revertidos=[];
+
+  // 1. Revert stock
+  o.itens.forEach(item=>{
+    const p=db.produtos.find(p=>p.nome===item.nome&&p.espec===item.espec);
+    if(p){
+      p.qtd+=item.qtd;
+      revertidos.push(item.qtd+'x '+item.nome+' '+item.espec);
+    }
+  });
+
+  // 2. Remove from movs (entries created by this order)
+  const datasPedido=o.itens.map(i=>i.nome);
+  db.movs=db.movs.filter(m=>{
+    if(m.obs&&(m.obs.includes('Pedido via Orçamento')||m.obs.includes(o.num))){
+      // Only remove if matches this order's client and date
+      if(m.empresa===o.cliente)return false;
+    }
+    return true;
+  });
+
+  // 3. Remove from recebimentos (boletos related to this order)
+  db.boletos=db.boletos.filter(b=>{
+    if(b.cli===o.cliente&&(b.obs||'').includes('Pedido via Orçamento'))return false;
+    return true;
+  });
+
+  // 4. Remove from retiradas
+  if(db.retiradas){
+    db.retiradas=db.retiradas.filter(r=>r.num!==o.num);
+  }
+
+  // 5. Mark as cancelled (keep in history)
+  o.status='Cancelado';
+  o.dataCancelamento=new Date().toLocaleDateString('pt-BR');
+
+  save();
+  renderAll();
+  alert('✓ Pedido cancelado!\n\nEstoque revertido:\n'+revertidos.join('\n')+
+    '\n\nRecebimento e retirada removidos.\nO orçamento ficou marcado como Cancelado no histórico.');
 }
 
 function confirmarPedido(){
@@ -2686,7 +2749,7 @@ function renderRetiradas(){
       <td style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn btn-sm" style="font-size:11px" onclick="verDetalhesRetirada(${realIdx})">👁</button>
         ${r.status==='pendente'?`<button class="btn btn-primary btn-sm" style="font-size:11px" onclick="marcarRetirado(${realIdx})">✓ Retirado</button>`:''}
-        <button class="btn btn-danger btn-sm" onclick="removerRetirada(${realIdx})">✕</button>
+        ${r.status==='pendente'?`<button class="btn btn-danger btn-sm" style="font-size:11px" onclick="cancelarRetirada(${realIdx})">✕ Cancelar</button>`:'<button class="btn btn-sm" style="font-size:11px" onclick="removerRetirada(${realIdx})">✕</button>'}
       </td>
     </tr>`;
   }).join('');
@@ -2699,6 +2762,29 @@ function marcarRetirado(idx){
   r.dataRetiradaReal=new Date().toLocaleDateString('pt-BR');
   save();
   renderRetiradas();
+}
+
+function cancelarRetirada(idx){
+  if(!perfilAtual||perfilAtual.tipo!=='gestor'){alert('Somente o Gestor pode cancelar pedidos.');return;}
+  const r=db.retiradas[idx];
+  if(!r)return;
+  if(!confirm('Cancelar pedido de '+r.cliente+'?\n\nO estoque será revertido e o recebimento removido.'))return;
+  // Find the corresponding orcamento and cancel it
+  const orcIdx=(db.orcamentos||[]).findIndex(o=>o.num===r.num);
+  if(orcIdx>=0){
+    cancelarPedidoConfirmado(orcIdx);
+  } else {
+    // No orcamento found - just revert stock manually
+    r.itens.forEach(item=>{
+      const p=db.produtos.find(p=>p.nome===item.nome&&p.espec===item.espec);
+      if(p) p.qtd+=item.qtd;
+    });
+    db.boletos=db.boletos.filter(b=>!(b.cli===r.cliente&&(b.obs||'').includes('Pedido via Orçamento')));
+    db.retiradas.splice(idx,1);
+    save();
+    renderAll();
+    alert('✓ Pedido cancelado e estoque revertido!');
+  }
 }
 
 function removerRetirada(idx){
