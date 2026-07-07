@@ -437,39 +437,53 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 
 <!-- MODAL EDITAR BOLETO -->
 <div class="modal-overlay" id="modal-edit-boleto">
-  <div class="modal">
+  <div class="modal" style="width:520px">
     <div class="modal-title">Editar recebimento</div>
-    <div class="form-grid">
-      <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date"></div>
-      <div class="field"><label>Cliente</label><input id="eb-cli" placeholder="Nome do cliente"></div>
-      <div class="field"><label>Valor (R$)</label><input id="eb-val" type="number" step="0.01"></div>
-      <div class="field"><label>Forma de pagamento</label>
-        <select id="eb-pgto">
-          <option value="Boleto">Boleto (a receber)</option>
-          <option value="PIX">PIX (recebido)</option>
-          <option value="Dinheiro">Dinheiro (recebido)</option>
-          <option value="Cartão de crédito">Cartão de crédito (recebido)</option>
-          <option value="Cartão de débito">Cartão de débito (recebido)</option>
-          <option value="Transferência">Transferência (recebido)</option>
-          <option value="À vista">À vista (recebido)</option>
-        </select>
+    
+    <!-- Parcela atual -->
+    <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Parcela atual</div>
+      <div class="form-grid">
+        <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date"></div>
+        <div class="field"><label>Valor (R$)</label><input id="eb-val" type="number" step="0.01" oninput="atualizarRestante()"></div>
+        <div class="field"><label>Forma de pagamento</label>
+          <select id="eb-pgto">
+            <option value="Boleto">Boleto (a receber)</option>
+            <option value="PIX">PIX (recebido)</option>
+            <option value="Dinheiro">Dinheiro (recebido)</option>
+            <option value="Cartão de crédito">Cartão de crédito (recebido)</option>
+            <option value="Cartão de débito">Cartão de débito (recebido)</option>
+            <option value="Transferência">Transferência (recebido)</option>
+            <option value="À vista">À vista (recebido)</option>
+          </select>
+        </div>
+        <div class="field"><label>Mês de referência</label>
+          <select id="eb-mes">
+            <option>Maio/2026</option><option>Junho/2026</option><option>Julho/2026</option>
+            <option>Agosto/2026</option><option>Setembro/2026</option><option>Outubro/2026</option>
+            <option>Novembro/2026</option><option>Dezembro/2026</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Cliente</label><input id="eb-cli" placeholder="Nome do cliente"></div>
+        <div class="field"><label>Observação</label><input id="eb-obs" placeholder="NF, referência..."></div>
       </div>
     </div>
-    <div class="form-grid">
-      <div class="field"><label>Mês de referência</label>
-        <select id="eb-mes">
-          <option>Maio/2026</option><option>Junho/2026</option><option>Julho/2026</option>
-          <option>Agosto/2026</option><option>Setembro/2026</option><option>Outubro/2026</option>
-          <option>Novembro/2026</option><option>Dezembro/2026</option>
-        </select>
+
+    <!-- Adicionar parcelas extras -->
+    <div style="border:1px dashed var(--border);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px">Adicionar parcelas extras</div>
+        <button type="button" class="btn btn-sm" onclick="addParcelaExtra()">+ Parcela</button>
       </div>
-      <div class="field" style="grid-column:1/-1"><label>Observação</label>
-        <input id="eb-obs" placeholder="NF, referência...">
-      </div>
+      <div id="parcelas-extras-lista"></div>
+      <div id="parcelas-restante" style="font-size:12px;color:var(--text3);margin-top:6px"></div>
     </div>
+
     <div class="modal-footer">
       <button class="btn" onclick="closeModalEditBoleto()">Cancelar</button>
-      <button class="btn btn-primary" onclick="salvarEditBoleto()">Salvar</button>
+      <button class="btn btn-primary" onclick="salvarEditBoleto()">✓ Salvar</button>
     </div>
   </div>
 </div>
@@ -777,6 +791,19 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
         </tr></thead>
         <tbody></tbody>
       </table>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL EDITAR PARCELAS EM LOTE -->
+<div class="modal-overlay" id="modal-parcelas-lote">
+  <div class="modal" style="width:600px">
+    <div class="modal-title">Editar parcelas — <span id="parcelas-lote-cli"></span></div>
+    <div style="font-size:12px;color:var(--text3);margin-bottom:12px">Edite as datas e valores de cada parcela. O mês de referência será definido automaticamente pela data de vencimento.</div>
+    <div id="parcelas-lote-lista" style="max-height:350px;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeModalParcelasLote()">Cancelar</button>
+      <button class="btn btn-primary" onclick="salvarParcelasLote()">✓ Salvar todas</button>
     </div>
   </div>
 </div>
@@ -1574,8 +1601,9 @@ function renderBoletos(){
           ${recebidoMes>0?`<span style="color:var(--verde)">Recebido: <strong>R$ ${recebidoMes.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</strong></span>`:''}
         </div>
       </div>
-      <div style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px">
+      <div style="padding:8px 16px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:6px;align-items:center">
         ${Object.entries(porPgto).map(([p,v])=>{const c=pgtoColor(p);return`<span class="badge" style="background:${c.bg};color:${c.color}">${p}: R$ ${v.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}</span>`;}).join('')}
+        ${bs.filter(b=>b.pgto==='Boleto').length>0?`<button class="btn btn-sm" style="font-size:11px;margin-left:auto" onclick="editarParcelasLote('${mes}')">✎ Editar parcelas</button>`:''}
       </div>
       <div class="table-wrap"><table>
         <thead><tr><th style="width:90px">Data/Venc.</th><th>Cliente</th><th style="width:120px">Pagamento</th><th style="width:100px">Valor</th><th>Observação</th><th style="width:40px"></th></tr></thead>
@@ -1830,7 +1858,6 @@ let _editBoletoIdx = null;
 function editarBoleto(idx) {
   _editBoletoIdx = idx;
   const b = db.boletos[idx];
-  // Convert dd/mm/yyyy to yyyy-mm-dd for date input
   const p = (b.venc||'').split('/');
   const dateVal = p.length===3 ? `${p[2]}-${p[1]}-${p[0]}` : '';
   document.getElementById('eb-venc').value = dateVal;
@@ -1839,12 +1866,70 @@ function editarBoleto(idx) {
   document.getElementById('eb-pgto').value = b.pgto||'Boleto';
   document.getElementById('eb-mes').value = b.mes||'Julho/2026';
   document.getElementById('eb-obs').value = b.obs||'';
+  // Clear parcelas extras
+  document.getElementById('parcelas-extras-lista').innerHTML = '';
+  document.getElementById('parcelas-restante').textContent = '';
   document.getElementById('modal-edit-boleto').classList.add('open');
 }
 
 function closeModalEditBoleto() {
   document.getElementById('modal-edit-boleto').classList.remove('open');
   _editBoletoIdx = null;
+}
+
+function addParcelaExtra() {
+  const container = document.getElementById('parcelas-extras-lista');
+  const num = container.querySelectorAll('.parcela-extra-row').length + 2;
+  const div = document.createElement('div');
+  div.className = 'parcela-extra-row form-grid';
+  div.style.marginBottom = '8px';
+  div.innerHTML = `
+    <div class="field"><label>Vencimento ${num}ª parcela</label><input type="date" class="pe-venc" onchange="autoMesParcela(this)"></div>
+    <div class="field"><label>Valor ${num}ª parcela (R$)</label>
+      <div style="display:flex;gap:6px">
+        <input type="number" step="0.01" class="pe-val" placeholder="0,00" oninput="atualizarRestante()" style="flex:1">
+        <button type="button" class="btn btn-danger btn-sm" style="margin-top:0;align-self:flex-end" onclick="this.closest('.parcela-extra-row').remove();atualizarRestante()">✕</button>
+      </div>
+    </div>
+    <div class="field"><label>Mês referência</label>
+      <select class="pe-mes">
+        ${['Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map(m=>{
+          const opt2026=m+'/2026';const opt2027=m+'/2027';
+          return`<option value="${opt2026}">${opt2026}</option><option value="${opt2027}">${opt2027}</option>`;
+        }).join('')}
+      </select>
+    </div>`;
+  container.appendChild(div);
+  atualizarRestante();
+}
+
+function autoMesParcela(input) {
+  const dateVal = input.value;
+  if(!dateVal) return;
+  const d = new Date(dateVal+'T12:00:00');
+  const mnames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const mes = mnames[d.getMonth()]+'/'+d.getFullYear();
+  const row = input.closest('.parcela-extra-row');
+  const sel = row.querySelector('.pe-mes');
+  if(sel) {
+    // Check if option exists, if not add it
+    let found = false;
+    for(let opt of sel.options) { if(opt.value===mes){found=true;break;} }
+    if(!found) { const o=document.createElement('option'); o.value=mes; o.textContent=mes; sel.appendChild(o); }
+    sel.value = mes;
+  }
+}
+
+function atualizarRestante() {
+  const valAtual = parseFloat(document.getElementById('eb-val').value)||0;
+  const extras = [...document.querySelectorAll('.pe-val')].reduce((s,i)=>s+(parseFloat(i.value)||0),0);
+  const total = valAtual + extras;
+  const el = document.getElementById('parcelas-restante');
+  if(extras > 0) {
+    el.textContent = `Total das parcelas: R$ ${total.toFixed(2).replace('.',',')}`;
+  } else {
+    el.textContent = '';
+  }
 }
 
 function salvarEditBoleto() {
@@ -1857,9 +1942,33 @@ function salvarEditBoleto() {
   b.pgto = document.getElementById('eb-pgto').value;
   b.mes = document.getElementById('eb-mes').value;
   b.obs = document.getElementById('eb-obs').value.trim();
+
+  // Save extra parcelas
+  const extraRows = document.querySelectorAll('.parcela-extra-row');
+  extraRows.forEach(row => {
+    const vencEl = row.querySelector('.pe-venc');
+    const valEl = row.querySelector('.pe-val');
+    const mesEl = row.querySelector('.pe-mes');
+    const vencDate = vencEl?.value;
+    const valParcela = parseFloat(valEl?.value)||0;
+    if(vencDate && valParcela > 0) {
+      const vencStr = new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
+      db.boletos.push({
+        mes: mesEl?.value||b.mes,
+        venc: vencStr,
+        cli: b.cli,
+        val: valParcela,
+        pgto: b.pgto,
+        obs: b.obs
+      });
+    }
+  });
+
   save();
   closeModalEditBoleto();
   renderBoletos();
+  const numExtras = extraRows.length;
+  if(numExtras > 0) alert(`✓ Boleto atualizado e ${numExtras} parcela(s) extra(s) adicionada(s)!`);
 }
 
 
@@ -2821,6 +2930,130 @@ function verDetalhesRetirada(idx){
   `).join('');
   document.getElementById('orc-det-total').textContent='Total: '+fmt(r.total);
   document.getElementById('modal-orc-detalhes').classList.add('open');
+}
+
+
+// ── EDITAR PARCELAS EM LOTE ────────────────────────────────────────────────
+
+let _parcelasLoteMes = null;
+let _parcelasLoteIndices = [];
+
+function editarParcelasLote(mes){
+  _parcelasLoteMes = mes;
+  const boletos = db.boletos;
+  // Get all boletos in this month that are Boleto type
+  _parcelasLoteIndices = [];
+  boletos.forEach((b, i) => {
+    if(b.mes === mes && b.pgto === 'Boleto') {
+      _parcelasLoteIndices.push(i);
+    }
+  });
+
+  if(!_parcelasLoteIndices.length){
+    alert('Nenhum boleto encontrado neste mês.');
+    return;
+  }
+
+  // Group by client for display
+  const clientes = [...new Set(_parcelasLoteIndices.map(i => boletos[i].cli))];
+  document.getElementById('parcelas-lote-cli').textContent = mes + ' (' + _parcelasLoteIndices.length + ' boleto(s))';
+
+  // Build form
+  const lista = document.getElementById('parcelas-lote-lista');
+  lista.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr>
+        <th style="padding:8px;text-align:left;background:var(--bg);font-size:11px;color:var(--text3)">CLIENTE</th>
+        <th style="padding:8px;text-align:left;background:var(--bg);font-size:11px;color:var(--text3)">OBS.</th>
+        <th style="padding:8px;text-align:right;background:var(--bg);font-size:11px;color:var(--text3)">VALOR</th>
+        <th style="padding:8px;text-align:left;background:var(--bg);font-size:11px;color:var(--text3)">VENCIMENTO</th>
+        <th style="padding:8px;text-align:left;background:var(--bg);font-size:11px;color:var(--text3)">MÊS REF.</th>
+      </tr></thead>
+      <tbody>
+        ${_parcelasLoteIndices.map((bIdx, rowIdx) => {
+          const b = boletos[bIdx];
+          // Convert dd/mm/yyyy to yyyy-mm-dd for date input
+          const parts = (b.venc||'').split('/');
+          const dateVal = parts.length===3 && parts[2].length===4 
+            ? parts[2]+'-'+parts[1]+'-'+parts[0] 
+            : '';
+          return `<tr style="border-bottom:1px solid var(--border)">
+            <td style="padding:8px"><strong>${b.cli}</strong></td>
+            <td style="padding:8px;color:var(--text3);font-size:12px">${b.obs||'—'}</td>
+            <td style="padding:8px;text-align:right"><strong>${fmt(b.val)}</strong></td>
+            <td style="padding:6px 8px">
+              <input type="date" 
+                data-idx="${bIdx}" 
+                class="pl-venc-input"
+                value="${dateVal}"
+                style="font-size:13px;width:100%">
+            </td>
+            <td style="padding:6px 8px">
+              <select data-idx="${bIdx}" class="pl-mes-input" style="font-size:13px;width:100%">
+                ${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map(m => {
+                  const yr = new Date().getFullYear();
+                  const opt = m+'/'+yr;
+                  return `<option value="${opt}" ${b.mes===opt?'selected':''}>${opt}</option>`;
+                }).join('')}
+                ${(() => {
+                  const yr = new Date().getFullYear()+1;
+                  return ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'].map(m => {
+                    const opt = m+'/'+yr;
+                    return `<option value="${opt}" ${b.mes===opt?'selected':''}>${opt}</option>`;
+                  }).join('');
+                })()}
+              </select>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+    <div style="padding:8px;font-size:12px;color:var(--text3);text-align:right">
+      <button class="btn btn-sm" onclick="autoPreencherMeses()">✨ Preencher mês pela data</button>
+    </div>
+  `;
+
+  document.getElementById('modal-parcelas-lote').classList.add('open');
+}
+
+function autoPreencherMeses(){
+  // Auto-fill month selects based on date inputs
+  document.querySelectorAll('.pl-venc-input').forEach(input => {
+    const dateVal = input.value;
+    if(!dateVal) return;
+    const d = new Date(dateVal+'T12:00:00');
+    const mnames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mes = mnames[d.getMonth()]+'/'+d.getFullYear();
+    const idx = input.getAttribute('data-idx');
+    const mesSelect = document.querySelector('.pl-mes-input[data-idx="'+idx+'"]');
+    if(mesSelect) mesSelect.value = mes;
+  });
+}
+
+function salvarParcelasLote(){
+  let salvos = 0;
+  document.querySelectorAll('.pl-venc-input').forEach(input => {
+    const dateVal = input.value;
+    const idx = parseInt(input.getAttribute('data-idx'));
+    const mesSelect = document.querySelector('.pl-mes-input[data-idx="'+idx+'"]');
+    
+    if(dateVal && db.boletos[idx]) {
+      db.boletos[idx].venc = new Date(dateVal+'T12:00:00').toLocaleDateString('pt-BR');
+      if(mesSelect) db.boletos[idx].mes = mesSelect.value;
+      salvos++;
+    }
+  });
+  
+  save();
+  closeModalParcelasLote();
+  renderBoletos();
+  alert('✓ '+salvos+' parcela(s) atualizada(s)!');
+}
+
+function closeModalParcelasLote(){
+  document.getElementById('modal-parcelas-lote').classList.remove('open');
+  _parcelasLoteMes = null;
+  _parcelasLoteIndices = [];
 }
 
 </script>
