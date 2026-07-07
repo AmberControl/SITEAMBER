@@ -2392,6 +2392,7 @@ function finalizarPedido(){
   if(pgto==='Boleto'){
     const vencs=[...document.querySelectorAll('.ped-venc')];
     const vals=[...document.querySelectorAll('.ped-val')];
+    let parcelasAdicionadas=0;
     vencs.forEach((v,i)=>{
       const vencDate=v.value;
       const valParcela=parseFloat(vals[i]?.value)||0;
@@ -2399,8 +2400,13 @@ function finalizarPedido(){
         const vencStr=new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
         const mesParcela=getMesFromDate(vencDate);
         db.boletos.push({mes:mesParcela,venc:vencStr,cli,val:valParcela,pgto:'Boleto',obs:obs||'Pedido via Orçamento'});
+        parcelasAdicionadas++;
       }
     });
+    // Se não preencheu parcelas, lança o total com vencimento em aberto
+    if(parcelasAdicionadas===0){
+      db.boletos.push({mes,venc:'A definir',cli,val:total,pgto:'Boleto',obs:(obs||'Pedido via Orçamento')+' — vencimento a definir'});
+    }
   } else {
     db.boletos.push({mes,venc:dataStr,cli,val:total,pgto,obs:obs||'Pedido via Orçamento'});
   }
