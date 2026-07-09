@@ -945,58 +945,77 @@ let perfilAtual=null;
 
 function fazerLogin(){
   const senha=document.getElementById('login-senha').value.trim();
-  const usuarios=(db&&db.usuarios)?db.usuarios:PERFIS;
-  const perfil=usuarios[senha];
-  if(!perfil){
-    document.getElementById('login-error').style.display='block';
-    document.getElementById('login-senha').value='';
-    return;
-  }
-  perfilAtual=perfil;
-  // Save session so page refresh doesn't log out
-  sessionStorage.setItem('amber-session', JSON.stringify({senha, perfil}));
-  document.getElementById('login-screen').style.display='none';
-  // badge perfil
-  const badge=document.createElement('span');
-  badge.className='login-perfil-badge badge-'+perfil.tipo;
-  badge.textContent=perfil.nome;
-  document.getElementById('last-save').insertAdjacentElement('afterend',badge);
-  const btnSair=document.createElement('button');
-  btnSair.className='btn btn-sm';btnSair.textContent='Sair';btnSair.style.fontSize='11px';
-  btnSair.onclick=()=>{sessionStorage.removeItem('amber-session');location.reload();};
-  badge.insertAdjacentElement('afterend',btnSair);
-  // Botão trocar senha
-  const btnSenha=document.createElement('button');
-  btnSenha.className='btn btn-sm';btnSenha.textContent='🔑 Senha';btnSenha.style.fontSize='11px';
-  btnSenha.onclick=abrirTrocarSenha;
-  btnSair.insertAdjacentElement('afterend',btnSenha);
-  // restringir vendedor
-  if(perfil.tipo!=='gestor'){
-    document.body.classList.add('vendedor-mode');
-    // Hide tabs not for vendedor
-    document.querySelectorAll('.nav-btn').forEach(b=>{
-      const t=b.getAttribute('onclick')||'';
-      if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))
-        b.style.display='none';
-    });
-    // Hide backup/restore buttons
-    const csv=document.querySelector('button[onclick="exportCSV()"]');
-    if(csv)csv.style.display='none';
-    document.querySelectorAll('button[onclick="exportBackup()"]').forEach(b=>b.style.display='none');
-    document.querySelectorAll('label').forEach(b=>{
-      if(b.textContent.includes('Restaurar'))b.style.display='none';
-    });
-    // On movimentar, hide Entrada option
-    const tipoSel=document.getElementById('m-tipo');
-    if(tipoSel){
-      Array.from(tipoSel.options).forEach(o=>{
-        if(o.value==='Entrada')o.style.display='none';
-      });
-      tipoSel.value='Saída';
+  const btnEntrar=document.querySelector('.login-btn');
+  if(btnEntrar)btnEntrar.textContent='Verificando...';
+
+  function tentarLogin(usuarios){
+    const perfil=usuarios[senha];
+    if(!perfil){
+      document.getElementById('login-error').style.display='block';
+      document.getElementById('login-senha').value='';
+      if(btnEntrar)btnEntrar.textContent='Entrar';
+      return;
     }
+    perfilAtual=perfil;
+    sessionStorage.setItem('amber-session', JSON.stringify({senha, perfil}));
+    document.getElementById('login-screen').style.display='none';
+    if(btnEntrar)btnEntrar.textContent='Entrar';
+    const badge=document.createElement('span');
+    badge.className='login-perfil-badge badge-'+perfil.tipo;
+    badge.textContent=perfil.nome;
+    document.getElementById('last-save').insertAdjacentElement('afterend',badge);
+    const btnSair=document.createElement('button');
+    btnSair.className='btn btn-sm';btnSair.textContent='Sair';btnSair.style.fontSize='11px';
+    btnSair.onclick=()=>{sessionStorage.removeItem('amber-session');location.reload();};
+    badge.insertAdjacentElement('afterend',btnSair);
+    const btnSenha=document.createElement('button');
+    btnSenha.className='btn btn-sm';btnSenha.textContent='🔑 Senha';btnSenha.style.fontSize='11px';
+    btnSenha.onclick=abrirTrocarSenha;
+    btnSair.insertAdjacentElement('afterend',btnSenha);
+    if(perfil.tipo!=='gestor'){
+      document.body.classList.add('vendedor-mode');
+      document.querySelectorAll('.nav-btn').forEach(b=>{
+        const t=b.getAttribute('onclick')||'';
+        if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))
+          b.style.display='none';
+      });
+      const csv=document.querySelector('button[onclick="exportCSV()"]');
+      if(csv)csv.style.display='none';
+      document.querySelectorAll('button[onclick="exportBackup()"]').forEach(b=>b.style.display='none');
+      document.querySelectorAll('label').forEach(b=>{
+        if(b.textContent.includes('Restaurar'))b.style.display='none';
+      });
+      const tipoSel=document.getElementById('m-tipo');
+      if(tipoSel){
+        Array.from(tipoSel.options).forEach(o=>{if(o.value==='Entrada')o.style.display='none';});
+        tipoSel.value='Saída';
+      }
+    }
+    load();
   }
-  load(); // load() will call renderAll() after Firebase sync
+
+  // Busca senhas atualizadas do Firebase antes de validar
+  try {
+    if(typeof firebaseDB !== 'undefined' && firebaseDB) {
+      firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
+        const fbUsuarios = snap.val();
+        if(fbUsuarios && Object.keys(fbUsuarios).length > 0) {
+          db.usuarios = fbUsuarios;
+          tentarLogin(fbUsuarios);
+        } else {
+          tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
+        }
+      }).catch(function(){
+        tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
+      });
+    } else {
+      tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
+    }
+  } catch(e) {
+    tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
+  }
 }
+
 
 const KEY='amber-v19';
 let db={produtos:[],movs:[],boletos:[]};
