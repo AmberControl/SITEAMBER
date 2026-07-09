@@ -444,7 +444,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
     <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
       <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Parcela atual</div>
       <div class="form-grid">
-        <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date"></div>
+        <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date" onchange="autoMesParcelaAtual()"></div>
         <div class="field"><label>Valor (R$)</label><input id="eb-val" type="number" step="0.01" oninput="atualizarRestante()"></div>
         <div class="field"><label>Forma de pagamento</label>
           <select id="eb-pgto">
@@ -853,7 +853,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
   <div class="modal">
     <div class="modal-title">Editar recebimento</div>
     <div class="form-grid">
-      <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date"></div>
+      <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date" onchange="autoMesParcelaAtual()"></div>
       <div class="field"><label>Cliente</label><input id="eb-cli" placeholder="Nome do cliente"></div>
       <div class="field"><label>Valor (R$)</label><input id="eb-val" type="number" step="0.01"></div>
       <div class="field"><label>Forma de pagamento</label>
@@ -953,6 +953,8 @@ function fazerLogin(){
     return;
   }
   perfilAtual=perfil;
+  // Save session so page refresh doesn't log out
+  sessionStorage.setItem('amber-session', JSON.stringify({senha, perfil}));
   document.getElementById('login-screen').style.display='none';
   // badge perfil
   const badge=document.createElement('span');
@@ -961,7 +963,7 @@ function fazerLogin(){
   document.getElementById('last-save').insertAdjacentElement('afterend',badge);
   const btnSair=document.createElement('button');
   btnSair.className='btn btn-sm';btnSair.textContent='Sair';btnSair.style.fontSize='11px';
-  btnSair.onclick=()=>location.reload();
+  btnSair.onclick=()=>{sessionStorage.removeItem('amber-session');location.reload();};
   badge.insertAdjacentElement('afterend',btnSair);
   // Botão trocar senha
   const btnSenha=document.createElement('button');
@@ -2653,7 +2655,11 @@ function closeModalOrcDetalhes(){
 function renderUsuarios(){
   const el=document.querySelector('#tbl-usuarios tbody');
   if(!el)return;
-  const usuarios=db.usuarios||PERFIS;
+  // Merge PERFIS into db.usuarios if not initialized
+  if(!db.usuarios){
+    db.usuarios=JSON.parse(JSON.stringify(PERFIS));
+  }
+  const usuarios=db.usuarios;
   const senhas=Object.keys(usuarios);
   if(!senhas.length){el.innerHTML='<tr><td colspan="4" class="empty">Nenhum usuário cadastrado.</td></tr>';return;}
   el.innerHTML=senhas.map(senha=>{
@@ -2683,6 +2689,7 @@ function addUsuario(){
   if(db.usuarios[senha]){fb.className='feedback err';fb.textContent='Essa senha já está em uso. Escolha outra.';return;}
   db.usuarios[senha]={tipo,nome};
   save();
+  renderUsuarios();
   fb.className='feedback ok';fb.textContent='Usuário "'+nome+'" adicionado com sucesso!';
   document.getElementById('usr-nome').value='';
   document.getElementById('usr-senha').value='';
@@ -2709,14 +2716,17 @@ function salvarEditUsuario(){
   const novoNome=document.getElementById('eu-nome').value.trim();
   const novaSenha=document.getElementById('eu-senha').value.trim();
   if(!novoNome||!novaSenha){alert('Preencha nome e senha.');return;}
+  // Ensure db.usuarios exists
+  if(!db.usuarios)db.usuarios=JSON.parse(JSON.stringify(PERFIS));
   const u=db.usuarios[_editUsuarioSenhaAtual];
-  // Remove old key, add new one (in case senha changed)
+  if(!u){alert('Usuário não encontrado. Tente novamente.');closeModalEditUsuario();return;}
+  // Remove old key, add new one
   delete db.usuarios[_editUsuarioSenhaAtual];
   db.usuarios[novaSenha]={tipo:u.tipo,nome:novoNome};
   save();
   closeModalEditUsuario();
   renderUsuarios();
-  alert('✓ Usuário atualizado!');
+  alert('✓ Usuário "'+novoNome+'" atualizado! Nova senha: '+novaSenha);
 }
 
 function removerUsuario(senha){
@@ -3055,6 +3065,70 @@ function closeModalParcelasLote(){
   _parcelasLoteMes = null;
   _parcelasLoteIndices = [];
 }
+
+
+function autoMesParcelaAtual() {
+  const dateVal = document.getElementById('eb-venc').value;
+  if(!dateVal) return;
+  const d = new Date(dateVal+'T12:00:00');
+  const mnames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const mes = mnames[d.getMonth()]+'/'+d.getFullYear();
+  const sel = document.getElementById('eb-mes');
+  if(sel) {
+    let found = false;
+    for(let opt of sel.options) { if(opt.value===mes){found=true;break;} }
+    if(!found) { const o=document.createElement('option'); o.value=mes; o.textContent=mes; sel.appendChild(o); }
+    sel.value = mes;
+  }
+}
+
+
+// ── RESTORE SESSION ON PAGE REFRESH ──────────────────────────────────────────
+(function(){
+  try {
+    const saved = sessionStorage.getItem('amber-session');
+    if(!saved) return;
+    const {perfil} = JSON.parse(saved);
+    if(!perfil) return;
+    perfilAtual = perfil;
+    document.getElementById('login-screen').style.display='none';
+    // Apply restrictions for vendedor
+    if(perfil.tipo!=='gestor'){
+      document.body.classList.add('vendedor-mode');
+      document.querySelectorAll('.nav-btn').forEach(b=>{
+        const t=b.getAttribute('onclick')||'';
+        if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||
+           t.includes('compras')||t.includes('usuarios')||t.includes('retiradas'))
+          b.style.display='none';
+      });
+      const csv=document.querySelector('button[onclick="exportCSV()"]');
+      if(csv)csv.style.display='none';
+      document.querySelectorAll('button[onclick="exportBackup()"]').forEach(b=>b.style.display='none');
+      document.querySelectorAll('label').forEach(b=>{
+        if(b.textContent.includes('Restaurar'))b.style.display='none';
+      });
+      const tipoSel=document.getElementById('m-tipo');
+      if(tipoSel){
+        Array.from(tipoSel.options).forEach(o=>{if(o.value==='Entrada')o.style.display='none';});
+        tipoSel.value='Saída';
+      }
+    }
+    // Restore header badge
+    const badge=document.createElement('span');
+    badge.className='login-perfil-badge badge-'+perfil.tipo;
+    badge.textContent=perfil.nome;
+    document.getElementById('last-save').insertAdjacentElement('afterend',badge);
+    const btnSair=document.createElement('button');
+    btnSair.className='btn btn-sm';btnSair.textContent='Sair';btnSair.style.fontSize='11px';
+    btnSair.onclick=()=>{sessionStorage.removeItem('amber-session');location.reload();};
+    badge.insertAdjacentElement('afterend',btnSair);
+    const btnSenha=document.createElement('button');
+    btnSenha.className='btn btn-sm';btnSenha.textContent='🔑 Senha';btnSenha.style.fontSize='11px';
+    btnSenha.onclick=abrirTrocarSenha;
+    btnSair.insertAdjacentElement('afterend',btnSenha);
+    load();
+  } catch(e) { console.log('Session restore error:', e); }
+})();
 
 </script>
 
