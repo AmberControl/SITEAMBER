@@ -1007,7 +1007,8 @@ function fazerLogin(){
   }
 
   // Busca senhas atualizadas do Firebase antes de validar
-  try {
+  // Se Firebase ainda não carregou, espera até 5 segundos
+  function buscarEValidar(tentativa){
     if(typeof firebaseDB !== 'undefined' && firebaseDB) {
       firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
         const fbUsuarios = snap.val();
@@ -1020,12 +1021,15 @@ function fazerLogin(){
       }).catch(function(){
         tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
       });
+    } else if(tentativa < 10) {
+      // Firebase ainda não carregou, tenta novamente em 500ms
+      setTimeout(function(){ buscarEValidar(tentativa+1); }, 500);
     } else {
+      // Após 5 segundos sem Firebase, usa dados locais
       tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
     }
-  } catch(e) {
-    tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
   }
+  buscarEValidar(0);
 }
 
 
