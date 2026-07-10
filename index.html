@@ -395,20 +395,8 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 
 <!-- MODAL NOVA COMPRA -->
 <div class="modal-overlay" id="modal-compra">
-  <div class="modal" style="width:540px">
+  <div class="modal">
     <div class="modal-title">Nova compra</div>
-    
-    <!-- Buscar produto do estoque -->
-    <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
-      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Selecionar produto do estoque (opcional)</div>
-      <input id="c-busca-prod" placeholder="Buscar produto cadastrado..." oninput="buscarProdCompra()" autocomplete="off">
-      <div id="c-lista-prod" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:6px;display:none"></div>
-      <div id="c-prod-selecionado" style="display:none;margin-top:8px;padding:8px;background:var(--ok);border-radius:var(--radius-sm);font-size:12px;color:var(--ok-text);display:flex;justify-content:space-between;align-items:center">
-        <span id="c-prod-selecionado-nome"></span>
-        <button type="button" onclick="limparProdCompra()" style="background:none;border:none;cursor:pointer;color:var(--ok-text);font-size:14px">✕</button>
-      </div>
-    </div>
-
     <div class="form-grid">
       <div class="field"><label>Código</label><input id="c-cod" placeholder="ex: 81307"></div>
       <div class="field"><label>Unidade</label><select id="c-un"><option>UN</option><option>SC</option><option>rolo</option><option>caixa</option></select></div>
@@ -1006,14 +994,13 @@ function fazerLogin(){
     load();
   }
 
-  // Busca senhas atualizadas do Firebase antes de validar
-  // Se Firebase ainda não carregou, espera até 5 segundos
+  // Busca senhas do Firebase primeiro (resolve problema de senha atualizada no celular)
   function buscarEValidar(tentativa){
-    if(typeof firebaseDB !== 'undefined' && firebaseDB) {
+    if(typeof firebaseDB !== 'undefined' && firebaseDB){
       firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
-        const fbUsuarios = snap.val();
-        if(fbUsuarios && Object.keys(fbUsuarios).length > 0) {
-          db.usuarios = fbUsuarios;
+        const fbUsuarios=snap.val();
+        if(fbUsuarios && Object.keys(fbUsuarios).length>0){
+          db.usuarios=fbUsuarios;
           tentarLogin(fbUsuarios);
         } else {
           tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
@@ -1021,17 +1008,14 @@ function fazerLogin(){
       }).catch(function(){
         tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
       });
-    } else if(tentativa < 10) {
-      // Firebase ainda não carregou, tenta novamente em 500ms
-      setTimeout(function(){ buscarEValidar(tentativa+1); }, 500);
+    } else if(tentativa<10){
+      setTimeout(function(){buscarEValidar(tentativa+1);},500);
     } else {
-      // Após 5 segundos sem Firebase, usa dados locais
       tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
     }
   }
   buscarEValidar(0);
 }
-
 
 const KEY='amber-v19';
 let db={produtos:[],movs:[],boletos:[]};
@@ -1201,6 +1185,13 @@ function load(){
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
+        // Only update if incoming data is newer than current (prevents race condition)
+        const incomingTs = data._savedAt || 0;
+        const currentTs = db._savedAt || 0;
+        if (incomingTs < currentTs) {
+          console.log('Ignoring older Firebase data');
+          return;
+        }
         db = data;
         if (!db.compras) db.compras = [];
         if (!db.boletos) db.boletos = [];
@@ -1213,8 +1204,7 @@ function load(){
         db.compras = [...COMPRAS_INIT];
         save();
       }
-      const loginHidden = document.getElementById('login-screen').style.display === 'none';
-      if (perfilAtual || loginHidden) {
+      if (perfilAtual) {
         renderAll();
         if (typeof renderUsuarios === 'function') renderUsuarios();
       }
@@ -1250,10 +1240,12 @@ function loadFromLocalStorage(){
   if (perfilAtual) renderAll();
 }
 function save(){
+  db._savedAt = Date.now(); // timestamp to prevent overwrite race condition
   localStorage.setItem(KEY, JSON.stringify(db));
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      firebaseDB.ref('amber').set(db).then(function() {
+      const dbToSave = JSON.parse(JSON.stringify(db));
+      firebaseDB.ref('amber').set(dbToSave).then(function() {
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         document.getElementById('last-save').textContent = 'Salvo às ' + now;
       }).catch(function(error) {
@@ -1772,12 +1764,7 @@ function renderCompras(){
     </tr>`;
   }).join('');
 }
-function openNovaCompra(){
-  document.getElementById('modal-compra').classList.add('open');
-  document.getElementById('c-busca-prod').value='';
-  document.getElementById('c-lista-prod').style.display='none';
-  document.getElementById('c-prod-selecionado').style.display='none';
-}
+function openNovaCompra(){document.getElementById('modal-compra').classList.add('open');}
 function closeModalCompra(){document.getElementById('modal-compra').classList.remove('open');}
 function salvarCompra(){
   const cod=document.getElementById('c-cod').value.trim()||'—';
@@ -3129,12 +3116,9 @@ function autoMesParcelaAtual() {
   try {
     const saved = sessionStorage.getItem('amber-session');
     if(!saved) return;
-    const {senha, perfil} = JSON.parse(saved);
-    if(!perfil||!senha) return;
-    
-    // Re-validate senha against Firebase to catch password changes
-    function restoreComPerfil(p){
-      perfilAtual = p;
+    const {perfil} = JSON.parse(saved);
+    if(!perfil) return;
+    perfilAtual = perfil;
     document.getElementById('login-screen').style.display='none';
     // Apply restrictions for vendedor
     if(perfil.tipo!=='gestor'){
@@ -3170,81 +3154,9 @@ function autoMesParcelaAtual() {
     btnSenha.className='btn btn-sm';btnSenha.textContent='🔑 Senha';btnSenha.style.fontSize='11px';
     btnSenha.onclick=abrirTrocarSenha;
     btnSair.insertAdjacentElement('afterend',btnSenha);
-      load();
-    }
-    
-    // Try Firebase first to validate current password
-    function validarSessao(){
-      if(typeof firebaseDB !== 'undefined' && firebaseDB){
-        firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
-          const fbUsuarios = snap.val();
-          if(fbUsuarios && fbUsuarios[senha]){
-            // Password still valid - update perfil in case name changed
-            sessionStorage.setItem('amber-session', JSON.stringify({senha, perfil: fbUsuarios[senha]}));
-            restoreComPerfil(fbUsuarios[senha]);
-          } else if(fbUsuarios && !fbUsuarios[senha]){
-            // Password was changed - force re-login
-            sessionStorage.removeItem('amber-session');
-            document.getElementById('login-error').textContent = 'Sua senha foi alterada. Por favor, faça login novamente.';
-            document.getElementById('login-error').style.display = 'block';
-          } else {
-            // Firebase empty or error - use cached perfil
-            restoreComPerfil(perfil);
-          }
-        }).catch(function(){
-          restoreComPerfil(perfil);
-        });
-      } else {
-        // Firebase not ready yet, retry
-        setTimeout(validarSessao, 500);
-      }
-    }
-    validarSessao();
+    load();
   } catch(e) { console.log('Session restore error:', e); }
 })();
-
-
-function buscarProdCompra(){
-  const busca=document.getElementById('c-busca-prod').value.toLowerCase().trim();
-  const lista=document.getElementById('c-lista-prod');
-  if(!busca){lista.style.display='none';return;}
-  const ps=db.produtos.filter(p=>`${p.nome} ${p.espec} ${p.marca}`.toLowerCase().includes(busca));
-  if(!ps.length){
-    lista.innerHTML='<div class="empty" style="padding:10px">Nenhum produto encontrado</div>';
-    lista.style.display='block';return;
-  }
-  lista.style.display='block';
-  lista.innerHTML=ps.map(p=>`
-    <div onclick="selecionarProdCompra('${p.nome.replace(/'/g,"\\'")}','${p.espec.replace(/'/g,"\\'")}','${p.unid||'UN'}',${p.custo||0},${p.preco||0})"
-      style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"
-      onmouseover="this.style.background='#f5f5f3'" onmouseout="this.style.background=''">
-      <div><strong>${p.nome}</strong> <span style="color:var(--text3)">${p.espec}</span><br>
-      <small style="color:var(--text3)">${p.marca} · Estoque atual: ${p.qtd} ${p.unid}</small></div>
-      <span class="badge" style="background:#E6F1FB;color:#0C447C">${p.preco?'R$ '+p.preco.toFixed(2).replace('.',','):''}</span>
-    </div>`).join('');
-}
-
-function selecionarProdCompra(nome,espec,unid,custo,preco){
-  document.getElementById('c-desc').value=nome+' '+espec;
-  document.getElementById('c-un').value=unid||'UN';
-  document.getElementById('c-vcompra').value=custo||'';
-  document.getElementById('c-vvenda').value=preco||'';
-  document.getElementById('c-lista-prod').style.display='none';
-  document.getElementById('c-busca-prod').value='';
-  const sel=document.getElementById('c-prod-selecionado');
-  sel.style.display='flex';
-  document.getElementById('c-prod-selecionado-nome').textContent='✓ '+nome+' '+espec;
-}
-
-function limparProdCompra(){
-  document.getElementById('c-prod-selecionado').style.display='none';
-  document.getElementById('c-busca-prod').value='';
-  document.getElementById('c-lista-prod').style.display='none';
-  document.getElementById('c-desc').value='';
-  document.getElementById('c-un').value='UN';
-  document.getElementById('c-vcompra').value='';
-  document.getElementById('c-vvenda').value='';
-}
 
 </script>
 
