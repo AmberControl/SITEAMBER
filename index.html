@@ -395,8 +395,20 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 
 <!-- MODAL NOVA COMPRA -->
 <div class="modal-overlay" id="modal-compra">
-  <div class="modal">
+  <div class="modal" style="width:540px">
     <div class="modal-title">Nova compra</div>
+    
+    <!-- Buscar produto do estoque -->
+    <div style="background:var(--bg);border-radius:var(--radius-sm);padding:12px;margin-bottom:14px">
+      <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Selecionar produto do estoque (opcional)</div>
+      <input id="c-busca-prod" placeholder="Buscar produto cadastrado..." oninput="buscarProdCompra()" autocomplete="off">
+      <div id="c-lista-prod" style="max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:var(--radius-sm);margin-top:6px;display:none"></div>
+      <div id="c-prod-selecionado" style="display:none;margin-top:8px;padding:8px;background:var(--ok);border-radius:var(--radius-sm);font-size:12px;color:var(--ok-text);display:flex;justify-content:space-between;align-items:center">
+        <span id="c-prod-selecionado-nome"></span>
+        <button type="button" onclick="limparProdCompra()" style="background:none;border:none;cursor:pointer;color:var(--ok-text);font-size:14px">✕</button>
+      </div>
+    </div>
+
     <div class="form-grid">
       <div class="field"><label>Código</label><input id="c-cod" placeholder="ex: 81307"></div>
       <div class="field"><label>Unidade</label><select id="c-un"><option>UN</option><option>SC</option><option>rolo</option><option>caixa</option></select></div>
@@ -1197,7 +1209,8 @@ function load(){
         db.compras = [...COMPRAS_INIT];
         save();
       }
-      if (perfilAtual) {
+      const loginHidden = document.getElementById('login-screen').style.display === 'none';
+      if (perfilAtual || loginHidden) {
         renderAll();
         if (typeof renderUsuarios === 'function') renderUsuarios();
       }
@@ -1755,7 +1768,12 @@ function renderCompras(){
     </tr>`;
   }).join('');
 }
-function openNovaCompra(){document.getElementById('modal-compra').classList.add('open');}
+function openNovaCompra(){
+  document.getElementById('modal-compra').classList.add('open');
+  document.getElementById('c-busca-prod').value='';
+  document.getElementById('c-lista-prod').style.display='none';
+  document.getElementById('c-prod-selecionado').style.display='none';
+}
 function closeModalCompra(){document.getElementById('modal-compra').classList.remove('open');}
 function salvarCompra(){
   const cod=document.getElementById('c-cod').value.trim()||'—';
@@ -3148,6 +3166,49 @@ function autoMesParcelaAtual() {
     load();
   } catch(e) { console.log('Session restore error:', e); }
 })();
+
+
+function buscarProdCompra(){
+  const busca=document.getElementById('c-busca-prod').value.toLowerCase().trim();
+  const lista=document.getElementById('c-lista-prod');
+  if(!busca){lista.style.display='none';return;}
+  const ps=db.produtos.filter(p=>`${p.nome} ${p.espec} ${p.marca}`.toLowerCase().includes(busca));
+  if(!ps.length){
+    lista.innerHTML='<div class="empty" style="padding:10px">Nenhum produto encontrado</div>';
+    lista.style.display='block';return;
+  }
+  lista.style.display='block';
+  lista.innerHTML=ps.map(p=>`
+    <div onclick="selecionarProdCompra('${p.nome.replace(/'/g,"\\'")}','${p.espec.replace(/'/g,"\\'")}','${p.unid||'UN'}',${p.custo||0},${p.preco||0})"
+      style="padding:8px 12px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center"
+      onmouseover="this.style.background='#f5f5f3'" onmouseout="this.style.background=''">
+      <div><strong>${p.nome}</strong> <span style="color:var(--text3)">${p.espec}</span><br>
+      <small style="color:var(--text3)">${p.marca} · Estoque atual: ${p.qtd} ${p.unid}</small></div>
+      <span class="badge" style="background:#E6F1FB;color:#0C447C">${p.preco?'R$ '+p.preco.toFixed(2).replace('.',','):''}</span>
+    </div>`).join('');
+}
+
+function selecionarProdCompra(nome,espec,unid,custo,preco){
+  document.getElementById('c-desc').value=nome+' '+espec;
+  document.getElementById('c-un').value=unid||'UN';
+  document.getElementById('c-vcompra').value=custo||'';
+  document.getElementById('c-vvenda').value=preco||'';
+  document.getElementById('c-lista-prod').style.display='none';
+  document.getElementById('c-busca-prod').value='';
+  const sel=document.getElementById('c-prod-selecionado');
+  sel.style.display='flex';
+  document.getElementById('c-prod-selecionado-nome').textContent='✓ '+nome+' '+espec;
+}
+
+function limparProdCompra(){
+  document.getElementById('c-prod-selecionado').style.display='none';
+  document.getElementById('c-busca-prod').value='';
+  document.getElementById('c-lista-prod').style.display='none';
+  document.getElementById('c-desc').value='';
+  document.getElementById('c-un').value='UN';
+  document.getElementById('c-vcompra').value='';
+  document.getElementById('c-vvenda').value='';
+}
 
 </script>
 
