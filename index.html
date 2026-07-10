@@ -3129,9 +3129,12 @@ function autoMesParcelaAtual() {
   try {
     const saved = sessionStorage.getItem('amber-session');
     if(!saved) return;
-    const {perfil} = JSON.parse(saved);
-    if(!perfil) return;
-    perfilAtual = perfil;
+    const {senha, perfil} = JSON.parse(saved);
+    if(!perfil||!senha) return;
+    
+    // Re-validate senha against Firebase to catch password changes
+    function restoreComPerfil(p){
+      perfilAtual = p;
     document.getElementById('login-screen').style.display='none';
     // Apply restrictions for vendedor
     if(perfil.tipo!=='gestor'){
@@ -3167,7 +3170,36 @@ function autoMesParcelaAtual() {
     btnSenha.className='btn btn-sm';btnSenha.textContent='🔑 Senha';btnSenha.style.fontSize='11px';
     btnSenha.onclick=abrirTrocarSenha;
     btnSair.insertAdjacentElement('afterend',btnSenha);
-    load();
+      load();
+    }
+    
+    // Try Firebase first to validate current password
+    function validarSessao(){
+      if(typeof firebaseDB !== 'undefined' && firebaseDB){
+        firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
+          const fbUsuarios = snap.val();
+          if(fbUsuarios && fbUsuarios[senha]){
+            // Password still valid - update perfil in case name changed
+            sessionStorage.setItem('amber-session', JSON.stringify({senha, perfil: fbUsuarios[senha]}));
+            restoreComPerfil(fbUsuarios[senha]);
+          } else if(fbUsuarios && !fbUsuarios[senha]){
+            // Password was changed - force re-login
+            sessionStorage.removeItem('amber-session');
+            document.getElementById('login-error').textContent = 'Sua senha foi alterada. Por favor, faça login novamente.';
+            document.getElementById('login-error').style.display = 'block';
+          } else {
+            // Firebase empty or error - use cached perfil
+            restoreComPerfil(perfil);
+          }
+        }).catch(function(){
+          restoreComPerfil(perfil);
+        });
+      } else {
+        // Firebase not ready yet, retry
+        setTimeout(validarSessao, 500);
+      }
+    }
+    validarSessao();
   } catch(e) { console.log('Session restore error:', e); }
 })();
 
