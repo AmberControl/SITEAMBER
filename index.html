@@ -117,7 +117,6 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 .badge-gestor{background:#E6F1FB;color:#0C447C;}
 .badge-vendedor{background:#EAF3DE;color:#27500A;}
 </style>
-<!-- SheetJS for Excel export -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
@@ -947,21 +946,19 @@ let perfilAtual=null;
 
 function fazerLogin(){
   const senha=document.getElementById('login-senha').value.trim();
-  const btnEntrar=document.querySelector('.login-btn');
-  if(btnEntrar)btnEntrar.textContent='Verificando...';
-
+  const btn=document.querySelector('.login-btn');
+  if(btn)btn.textContent='Verificando...';
   function tentarLogin(usuarios){
     const perfil=usuarios[senha];
     if(!perfil){
       document.getElementById('login-error').style.display='block';
       document.getElementById('login-senha').value='';
-      if(btnEntrar)btnEntrar.textContent='Entrar';
-      return;
+      if(btn)btn.textContent='Entrar';return;
     }
     perfilAtual=perfil;
-    sessionStorage.setItem('amber-session', JSON.stringify({senha, perfil}));
+    sessionStorage.setItem('amber-session',JSON.stringify({senha,perfil}));
     document.getElementById('login-screen').style.display='none';
-    if(btnEntrar)btnEntrar.textContent='Entrar';
+    if(btn)btn.textContent='Entrar';
     const badge=document.createElement('span');
     badge.className='login-perfil-badge badge-'+perfil.tipo;
     badge.textContent=perfil.nome;
@@ -978,43 +975,26 @@ function fazerLogin(){
       document.body.classList.add('vendedor-mode');
       document.querySelectorAll('.nav-btn').forEach(b=>{
         const t=b.getAttribute('onclick')||'';
-        if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))
-          b.style.display='none';
+        if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))b.style.display='none';
       });
-      const csv=document.querySelector('button[onclick="exportCSV()"]');
+      const csv=document.querySelector('button[onclick="exportCSV()"]')||document.querySelector('button[onclick="exportExcel()"]');
       if(csv)csv.style.display='none';
       document.querySelectorAll('button[onclick="exportBackup()"]').forEach(b=>b.style.display='none');
-      document.querySelectorAll('label').forEach(b=>{
-        if(b.textContent.includes('Restaurar'))b.style.display='none';
-      });
+      document.querySelectorAll('label').forEach(b=>{if(b.textContent.includes('Restaurar'))b.style.display='none';});
       const tipoSel=document.getElementById('m-tipo');
-      if(tipoSel){
-        Array.from(tipoSel.options).forEach(o=>{if(o.value==='Entrada')o.style.display='none';});
-        tipoSel.value='Saída';
-      }
+      if(tipoSel){Array.from(tipoSel.options).forEach(o=>{if(o.value==='Entrada')o.style.display='none';});tipoSel.value='Saída';}
     }
     load();
   }
-
-  // Busca senhas do Firebase primeiro (resolve problema de senha atualizada no celular)
-  function buscarEValidar(tentativa){
-    if(typeof firebaseDB !== 'undefined' && firebaseDB){
+  function buscarEValidar(n){
+    if(typeof firebaseDB!=='undefined'&&firebaseDB){
       firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
-        const fbUsuarios=snap.val();
-        if(fbUsuarios && Object.keys(fbUsuarios).length>0){
-          db.usuarios=fbUsuarios;
-          tentarLogin(fbUsuarios);
-        } else {
-          tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
-        }
-      }).catch(function(){
-        tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
-      });
-    } else if(tentativa<10){
-      setTimeout(function(){buscarEValidar(tentativa+1);},500);
-    } else {
-      tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
-    }
+        const u=snap.val();
+        if(u&&Object.keys(u).length>0){db.usuarios=u;tentarLogin(u);}
+        else tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
+      }).catch(function(){tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);});
+    } else if(n<10){setTimeout(function(){buscarEValidar(n+1);},500);}
+    else tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
   }
   buscarEValidar(0);
 }
@@ -1187,13 +1167,6 @@ function load(){
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
-        // Only update if incoming data is newer than current (prevents race condition)
-        const incomingTs = data._savedAt || 0;
-        const currentTs = db._savedAt || 0;
-        if (incomingTs < currentTs) {
-          console.log('Ignoring older Firebase data');
-          return;
-        }
         db = data;
         if (!db.compras) db.compras = [];
         if (!db.boletos) db.boletos = [];
@@ -1242,12 +1215,10 @@ function loadFromLocalStorage(){
   if (perfilAtual) renderAll();
 }
 function save(){
-  db._savedAt = Date.now(); // timestamp to prevent overwrite race condition
   localStorage.setItem(KEY, JSON.stringify(db));
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      const dbToSave = JSON.parse(JSON.stringify(db));
-      firebaseDB.ref('amber').set(dbToSave).then(function() {
+      firebaseDB.ref('amber').set(db).then(function() {
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         document.getElementById('last-save').textContent = 'Salvo às ' + now;
       }).catch(function(error) {
@@ -1702,90 +1673,46 @@ function saveEdit(){
   save();closeModal();renderAll();
 }
 
-function exportCSV(){
-  exportExcel();
-}
-
+function exportCSV(){ exportExcel(); }
 function exportExcel(){
-  if(typeof XLSX === 'undefined'){ alert('Biblioteca Excel não carregada. Tente novamente.'); return; }
-  const wb = XLSX.utils.book_new();
-  const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
-
-  // ── Aba 1: Estoque ──
-  const estoqueRows = [['#','Marca','Produto','Especificação','Linha','Unid.','Qtd Atual','Qtd Mínima','Qtd Máxima','Custo (R$)','Atacado (R$)','Preço Venda (R$)','Status']];
-  db.produtos.forEach((p,i) => estoqueRows.push([
-    i+1, p.marca, p.nome, p.espec, p.linha, p.unid,
-    p.qtd, p.min, p.max,
-    p.custo||0, p.atacado||0, p.preco||0,
-    status(p)==='ok'?'OK':status(p)==='warn'?'Atenção':'Crítico'
-  ]));
-  const wsEstoque = XLSX.utils.aoa_to_sheet(estoqueRows);
-  wsEstoque['!cols'] = [{wch:4},{wch:12},{wch:20},{wch:14},{wch:12},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:10},{wch:12},{wch:8}];
-  XLSX.utils.book_append_sheet(wb, wsEstoque, 'Estoque');
-
-  // ── Aba 2: Histórico ──
-  const histRows = [['Data','Produto','Especificação','Tipo','Qtd','Responsável','Empresa/Cliente','Valor (R$)','Pagamento','Observação']];
-  db.movs.forEach(m => histRows.push([
-    m.data, m.prod, m.espec||'', m.tipo, m.qtd,
-    m.resp||'', m.empresa||'', m.valor||0,
-    m.pgto||'', m.obs||''
-  ]));
-  const wsHist = XLSX.utils.aoa_to_sheet(histRows);
-  wsHist['!cols'] = [{wch:10},{wch:20},{wch:14},{wch:8},{wch:6},{wch:12},{wch:20},{wch:10},{wch:12},{wch:25}];
-  XLSX.utils.book_append_sheet(wb, wsHist, 'Histórico');
-
-  // ── Aba 3: Recebimentos ──
-  const recRows = [['Mês','Vencimento','Cliente','Forma Pgto','Valor (R$)','Status','Observação']];
-  db.boletos.forEach(b => recRows.push([
-    b.mes, b.venc, b.cli, b.pgto||'Boleto',
-    b.val||0,
-    isRecebido(b.pgto)?'Recebido':'A receber',
-    b.obs||''
-  ]));
-  const wsRec = XLSX.utils.aoa_to_sheet(recRows);
-  wsRec['!cols'] = [{wch:12},{wch:12},{wch:22},{wch:14},{wch:10},{wch:10},{wch:30}];
-  XLSX.utils.book_append_sheet(wb, wsRec, 'Recebimentos');
-
-  // ── Aba 4: Orçamentos ──
-  if(db.orcamentos && db.orcamentos.length){
-    const orcRows = [['Nº Orç.','Data','Cliente','CNPJ','Vendedor','Itens','Total (R$)','Status','Pgto']];
-    db.orcamentos.forEach(o => orcRows.push([
-      o.num||'', o.data, o.cliente||'', o.cnpj||'',
-      o.vendedor||'', o.itens.length, o.total||0,
-      o.status||'Pendente', o.pgto||''
-    ]));
-    const wsOrc = XLSX.utils.aoa_to_sheet(orcRows);
-    wsOrc['!cols'] = [{wch:16},{wch:10},{wch:22},{wch:16},{wch:12},{wch:6},{wch:10},{wch:10},{wch:12}];
-    XLSX.utils.book_append_sheet(wb, wsOrc, 'Orçamentos');
+  if(typeof XLSX==='undefined'){alert('Biblioteca Excel não carregada.');return;}
+  const wb=XLSX.utils.book_new();
+  const dt=new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+  // Estoque
+  const e=[['#','Marca','Produto','Especificação','Linha','Unid','Qtd','Mín','Máx','Custo','Atacado','Preço','Status']];
+  db.produtos.forEach((p,i)=>e.push([i+1,p.marca,p.nome,p.espec,p.linha,p.unid,p.qtd,p.min,p.max,p.custo||0,p.atacado||0,p.preco||0,status(p)==='ok'?'OK':status(p)==='warn'?'Atenção':'Crítico']));
+  const ws1=XLSX.utils.aoa_to_sheet(e);
+  ws1['!cols']=[{wch:4},{wch:12},{wch:20},{wch:14},{wch:12},{wch:6},{wch:7},{wch:7},{wch:7},{wch:10},{wch:10},{wch:10},{wch:8}];
+  XLSX.utils.book_append_sheet(wb,ws1,'Estoque');
+  // Histórico
+  const h=[['Data','Produto','Especificação','Tipo','Qtd','Responsável','Cliente/Empresa','Valor','Pagamento','Observação']];
+  db.movs.forEach(m=>h.push([m.data,m.prod,m.espec||'',m.tipo,m.qtd,m.resp||'',m.empresa||'',m.valor||0,m.pgto||'',m.obs||'']));
+  const ws2=XLSX.utils.aoa_to_sheet(h);
+  ws2['!cols']=[{wch:10},{wch:20},{wch:14},{wch:8},{wch:6},{wch:12},{wch:22},{wch:10},{wch:12},{wch:25}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Histórico');
+  // Recebimentos
+  const r=[['Mês','Vencimento','Cliente','Forma Pgto','Valor','Status','Observação']];
+  db.boletos.forEach(b=>r.push([b.mes,b.venc,b.cli,b.pgto||'Boleto',b.val||0,isRecebido(b.pgto)?'Recebido':'A receber',b.obs||'']));
+  const ws3=XLSX.utils.aoa_to_sheet(r);
+  ws3['!cols']=[{wch:12},{wch:12},{wch:22},{wch:14},{wch:10},{wch:10},{wch:30}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Recebimentos');
+  // Orçamentos
+  if(db.orcamentos&&db.orcamentos.length){
+    const o=[['Nº','Data','Cliente','CNPJ','Vendedor','Itens','Total','Status']];
+    db.orcamentos.forEach(x=>o.push([x.num||'',x.data,x.cliente||'',x.cnpj||'',x.vendedor||'',x.itens.length,x.total||0,x.status||'Pendente']));
+    const ws4=XLSX.utils.aoa_to_sheet(o);
+    ws4['!cols']=[{wch:16},{wch:10},{wch:22},{wch:16},{wch:12},{wch:6},{wch:10},{wch:10}];
+    XLSX.utils.book_append_sheet(wb,ws4,'Orçamentos');
   }
-
-  // ── Aba 5: Compras ──
-  if(db.compras && db.compras.length){
-    const compRows = [['Código','Descrição','Unid.','Qtd','Valor Compra (R$)','Valor Venda (R$)','Data Recebimento','Status']];
-    db.compras.forEach(c => compRows.push([
-      c.cod||'', c.desc, c.un, c.qtd,
-      c.vcompra||0, c.vvenda||0, c.data||'',
-      (c.data==='Aguardando'||!c.data)?'Aguardando':'Recebido'
-    ]));
-    const wsComp = XLSX.utils.aoa_to_sheet(compRows);
-    wsComp['!cols'] = [{wch:10},{wch:35},{wch:6},{wch:6},{wch:14},{wch:14},{wch:14},{wch:10}];
-    XLSX.utils.book_append_sheet(wb, wsComp, 'Compras');
+  // Compras
+  if(db.compras&&db.compras.length){
+    const c=[['Código','Descrição','Unid','Qtd','Vl Compra','Vl Venda','Data','Status']];
+    db.compras.forEach(x=>c.push([x.cod||'',x.desc,x.un,x.qtd,x.vcompra||0,x.vvenda||0,x.data||'',(x.data==='Aguardando'||!x.data)?'Aguardando':'Recebido']));
+    const ws5=XLSX.utils.aoa_to_sheet(c);
+    ws5['!cols']=[{wch:10},{wch:35},{wch:6},{wch:6},{wch:12},{wch:12},{wch:12},{wch:10}];
+    XLSX.utils.book_append_sheet(wb,ws5,'Compras');
   }
-
-  // ── Aba 6: Retiradas ──
-  if(db.retiradas && db.retiradas.length){
-    const retRows = [['Nº Pedido','Data Pedido','Data Retirada','Cliente','Vendedor','Total (R$)','Pgto','Status']];
-    db.retiradas.forEach(r => retRows.push([
-      r.num||'', r.dataPedido, r.dataRetirada,
-      r.cliente, r.vendedor, r.total||0,
-      r.pgto||'', r.status==='retirado'?'Retirado':'Aguardando'
-    ]));
-    const wsRet = XLSX.utils.aoa_to_sheet(retRows);
-    wsRet['!cols'] = [{wch:16},{wch:10},{wch:12},{wch:22},{wch:12},{wch:10},{wch:12},{wch:10}];
-    XLSX.utils.book_append_sheet(wb, wsRet, 'Retiradas');
-  }
-
-  XLSX.writeFile(wb, 'Amber_Relatorio_'+dateStr+'.xlsx');
+  XLSX.writeFile(wb,'Amber_Relatorio_'+dt+'.xlsx');
 }
 
 load();renderAll();
@@ -2345,8 +2272,6 @@ function gerarPDF() {
     .footer { position: fixed; bottom: 20px; left: 30px; right: 30px; border-top:1px solid #ddd; padding-top:10px; }
   }
 </style>
-<!-- SheetJS for Excel export -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="header">
@@ -3439,8 +3364,6 @@ function gerarPDF() {
     .footer { position: fixed; bottom: 20px; left: 30px; right: 30px; border-top:1px solid #ddd; padding-top:10px; }
   }
 </style>
-<!-- SheetJS for Excel export -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="header">
