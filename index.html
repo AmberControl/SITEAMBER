@@ -117,6 +117,8 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
 .badge-gestor{background:#E6F1FB;color:#0C447C;}
 .badge-vendedor{background:#EAF3DE;color:#27500A;}
 </style>
+<!-- SheetJS for Excel export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 
@@ -141,7 +143,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
   <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
     <span id="last-save" style="font-size:11px;color:var(--text3)"></span>
     <button class="btn btn-sm" onclick="forcarAtualizacao()" title="Buscar dados mais recentes">🔄</button>
-    <button class="btn btn-sm" onclick="exportCSV()" title="Exportar estoque em CSV">⬇ CSV</button>
+    <button class="btn btn-sm" onclick="exportExcel()" title="Exportar relatórios em Excel">⬇ Excel</button>
     <button class="btn btn-sm" style="background:#EAF3DE;color:#27500A;border-color:#C3E6B0" onclick="exportBackup()" title="Exportar backup completo">💾 Backup</button>
     <label class="btn btn-sm" style="background:#E6F1FB;color:#0C447C;border-color:#C3D9F5;cursor:pointer" title="Importar backup">
       📂 Restaurar<input type="file" accept=".json" onchange="importBackup(event)" style="display:none">
@@ -1701,11 +1703,89 @@ function saveEdit(){
 }
 
 function exportCSV(){
-  const rows=[['Marca','Produto','Especificação','Linha','Unidade','Qtd Atual','Qtd Mínima','Qtd Máxima','Custo','Atacado','Preço','Status']];
-  db.produtos.forEach(p=>rows.push([p.marca,p.nome,p.espec,p.linha,p.unid,p.qtd,p.min,p.max,p.custo||'',p.atacado||'',p.preco||'',status(p)]));
-  const csv=rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
-  const a=document.createElement('a');a.href='data:text/csv;charset=utf-8,\uFEFF'+encodeURIComponent(csv);
-  a.download='amber_estoque_'+new Date().toLocaleDateString('pt-BR').replace(/\//g,'-')+'.csv';a.click();
+  exportExcel();
+}
+
+function exportExcel(){
+  if(typeof XLSX === 'undefined'){ alert('Biblioteca Excel não carregada. Tente novamente.'); return; }
+  const wb = XLSX.utils.book_new();
+  const dateStr = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+
+  // ── Aba 1: Estoque ──
+  const estoqueRows = [['#','Marca','Produto','Especificação','Linha','Unid.','Qtd Atual','Qtd Mínima','Qtd Máxima','Custo (R$)','Atacado (R$)','Preço Venda (R$)','Status']];
+  db.produtos.forEach((p,i) => estoqueRows.push([
+    i+1, p.marca, p.nome, p.espec, p.linha, p.unid,
+    p.qtd, p.min, p.max,
+    p.custo||0, p.atacado||0, p.preco||0,
+    status(p)==='ok'?'OK':status(p)==='warn'?'Atenção':'Crítico'
+  ]));
+  const wsEstoque = XLSX.utils.aoa_to_sheet(estoqueRows);
+  wsEstoque['!cols'] = [{wch:4},{wch:12},{wch:20},{wch:14},{wch:12},{wch:6},{wch:8},{wch:8},{wch:8},{wch:10},{wch:10},{wch:12},{wch:8}];
+  XLSX.utils.book_append_sheet(wb, wsEstoque, 'Estoque');
+
+  // ── Aba 2: Histórico ──
+  const histRows = [['Data','Produto','Especificação','Tipo','Qtd','Responsável','Empresa/Cliente','Valor (R$)','Pagamento','Observação']];
+  db.movs.forEach(m => histRows.push([
+    m.data, m.prod, m.espec||'', m.tipo, m.qtd,
+    m.resp||'', m.empresa||'', m.valor||0,
+    m.pgto||'', m.obs||''
+  ]));
+  const wsHist = XLSX.utils.aoa_to_sheet(histRows);
+  wsHist['!cols'] = [{wch:10},{wch:20},{wch:14},{wch:8},{wch:6},{wch:12},{wch:20},{wch:10},{wch:12},{wch:25}];
+  XLSX.utils.book_append_sheet(wb, wsHist, 'Histórico');
+
+  // ── Aba 3: Recebimentos ──
+  const recRows = [['Mês','Vencimento','Cliente','Forma Pgto','Valor (R$)','Status','Observação']];
+  db.boletos.forEach(b => recRows.push([
+    b.mes, b.venc, b.cli, b.pgto||'Boleto',
+    b.val||0,
+    isRecebido(b.pgto)?'Recebido':'A receber',
+    b.obs||''
+  ]));
+  const wsRec = XLSX.utils.aoa_to_sheet(recRows);
+  wsRec['!cols'] = [{wch:12},{wch:12},{wch:22},{wch:14},{wch:10},{wch:10},{wch:30}];
+  XLSX.utils.book_append_sheet(wb, wsRec, 'Recebimentos');
+
+  // ── Aba 4: Orçamentos ──
+  if(db.orcamentos && db.orcamentos.length){
+    const orcRows = [['Nº Orç.','Data','Cliente','CNPJ','Vendedor','Itens','Total (R$)','Status','Pgto']];
+    db.orcamentos.forEach(o => orcRows.push([
+      o.num||'', o.data, o.cliente||'', o.cnpj||'',
+      o.vendedor||'', o.itens.length, o.total||0,
+      o.status||'Pendente', o.pgto||''
+    ]));
+    const wsOrc = XLSX.utils.aoa_to_sheet(orcRows);
+    wsOrc['!cols'] = [{wch:16},{wch:10},{wch:22},{wch:16},{wch:12},{wch:6},{wch:10},{wch:10},{wch:12}];
+    XLSX.utils.book_append_sheet(wb, wsOrc, 'Orçamentos');
+  }
+
+  // ── Aba 5: Compras ──
+  if(db.compras && db.compras.length){
+    const compRows = [['Código','Descrição','Unid.','Qtd','Valor Compra (R$)','Valor Venda (R$)','Data Recebimento','Status']];
+    db.compras.forEach(c => compRows.push([
+      c.cod||'', c.desc, c.un, c.qtd,
+      c.vcompra||0, c.vvenda||0, c.data||'',
+      (c.data==='Aguardando'||!c.data)?'Aguardando':'Recebido'
+    ]));
+    const wsComp = XLSX.utils.aoa_to_sheet(compRows);
+    wsComp['!cols'] = [{wch:10},{wch:35},{wch:6},{wch:6},{wch:14},{wch:14},{wch:14},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, wsComp, 'Compras');
+  }
+
+  // ── Aba 6: Retiradas ──
+  if(db.retiradas && db.retiradas.length){
+    const retRows = [['Nº Pedido','Data Pedido','Data Retirada','Cliente','Vendedor','Total (R$)','Pgto','Status']];
+    db.retiradas.forEach(r => retRows.push([
+      r.num||'', r.dataPedido, r.dataRetirada,
+      r.cliente, r.vendedor, r.total||0,
+      r.pgto||'', r.status==='retirado'?'Retirado':'Aguardando'
+    ]));
+    const wsRet = XLSX.utils.aoa_to_sheet(retRows);
+    wsRet['!cols'] = [{wch:16},{wch:10},{wch:12},{wch:22},{wch:12},{wch:10},{wch:12},{wch:10}];
+    XLSX.utils.book_append_sheet(wb, wsRet, 'Retiradas');
+  }
+
+  XLSX.writeFile(wb, 'Amber_Relatorio_'+dateStr+'.xlsx');
 }
 
 load();renderAll();
@@ -2265,6 +2345,8 @@ function gerarPDF() {
     .footer { position: fixed; bottom: 20px; left: 30px; right: 30px; border-top:1px solid #ddd; padding-top:10px; }
   }
 </style>
+<!-- SheetJS for Excel export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="header">
@@ -3357,6 +3439,8 @@ function gerarPDF() {
     .footer { position: fixed; bottom: 20px; left: 30px; right: 30px; border-top:1px solid #ddd; padding-top:10px; }
   }
 </style>
+<!-- SheetJS for Excel export -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </head>
 <body>
 <div class="header">
