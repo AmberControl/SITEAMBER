@@ -1162,6 +1162,15 @@ function load(){
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
+        // Only apply if incoming data is newer than what we have locally
+        const incomingTs = data._ts || 0;
+        const localTs = db._ts || 0;
+        if (incomingTs < localTs) {
+          // Our local data is newer - push it to Firebase instead
+          console.log('Local data is newer, pushing to Firebase');
+          firebaseDB.ref('amber').set(db);
+          return;
+        }
         db = data;
         if (!db.compras) db.compras = [];
         if (!db.boletos) db.boletos = [];
@@ -1213,25 +1222,15 @@ function loadFromLocalStorage(){
   if (perfilAtual) renderAll();
 }
 function save(){
+  db._ts = Date.now(); // timestamp to track which save is newest
   localStorage.setItem(KEY, JSON.stringify(db));
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      // Use update() to avoid overwriting other users' data
-      const updates = {};
-      updates['amber/produtos'] = db.produtos || [];
-      updates['amber/movs'] = db.movs || [];
-      updates['amber/boletos'] = db.boletos || [];
-      updates['amber/compras'] = db.compras || [];
-      updates['amber/orcamentos'] = db.orcamentos || [];
-      updates['amber/retiradas'] = db.retiradas || [];
-      if(db.usuarios) updates['amber/usuarios'] = db.usuarios;
-      
-      firebaseDB.ref().update(updates).then(function() {
+      const snapshot = JSON.parse(JSON.stringify(db));
+      firebaseDB.ref('amber').set(snapshot).then(function() {
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         document.getElementById('last-save').textContent = 'Salvo às ' + now;
       }).catch(function(error) {
-        // Fallback to set if update fails
-        firebaseDB.ref('amber').set(db);
         document.getElementById('last-save').textContent = 'Salvo localmente';
       });
     } else {
