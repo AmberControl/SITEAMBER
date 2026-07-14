@@ -541,7 +541,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
           <div class="form-grid" id="orc-add-fields" style="display:none">
             <div class="field"><label>Produto selecionado</label><input id="orc-prod-nome" readonly style="background:var(--bg)"></div>
             <div class="field"><label>Quantidade</label><input id="orc-prod-qtd" type="number" min="1" value="1"></div>
-            <div class="field"><label>Preço unit. (R$)</label><input id="orc-prod-preco" type="number" step="0.01"></div>
+            <div class="field"><label>Preço unit. (R$)</label><input id="orc-prod-preco" type="text" inputmode="decimal" placeholder="0,00"></div>
             <div class="field" style="display:flex;align-items:flex-end">
               <button class="btn btn-primary" style="width:100%" onclick="addItemOrc()">+ Adicionar</button>
             </div>
@@ -633,7 +633,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
       <div id="ped-parcelas">
         <div class="form-grid" style="margin-bottom:6px">
           <div class="field"><label>Vencimento 1</label><input type="date" class="ped-venc"></div>
-          <div class="field"><label>Valor parcela 1 (R$)</label><input type="number" step="0.01" class="ped-val" placeholder="0,00"></div>
+          <div class="field"><label>Valor parcela 1 (R$)</label><input type="text" inputmode="decimal" class="ped-val" placeholder="0,00"></div>
         </div>
       </div>
       <button type="button" class="btn btn-sm" onclick="addPedParcela()">+ Parcela</button>
@@ -2148,7 +2148,7 @@ function selecionarProdOrc(idx) {
 function addItemOrc() {
   if (!orcProdSelecionado) return;
   const qtd = parseInt(document.getElementById('orc-prod-qtd').value) || 1;
-  const preco = parseFloat(document.getElementById('orc-prod-preco').value) || 0;
+  const preco = parseBRL(document.getElementById('orc-prod-preco').value);
   // Check if already in list
   const existing = orcItems.find(i => i.nome === orcProdSelecionado.nome && i.espec === orcProdSelecionado.espec);
   if (existing) {
@@ -2568,7 +2568,7 @@ function addPedParcela(){
   div.className='form-grid';div.style.marginBottom='6px';
   div.innerHTML=`<div class="field"><label>Vencimento ${num}</label><input type="date" class="ped-venc"></div>
     <div class="field" style="display:flex;gap:6px;align-items:flex-end">
-      <div style="flex:1"><label>Valor ${num} (R$)</label><input type="number" step="0.01" class="ped-val" placeholder="0,00"></div>
+      <div style="flex:1"><label>Valor ${num} (R$)</label><input type="text" inputmode="decimal" class="ped-val" placeholder="0,00"></div>
       <button type="button" class="btn btn-danger btn-sm" onclick="this.closest('.form-grid').remove()">✕</button>
     </div>`;
   container.appendChild(div);
@@ -3272,7 +3272,7 @@ function selecionarProdOrc(idx) {
 function addItemOrc() {
   if (!orcProdSelecionado) return;
   const qtd = parseInt(document.getElementById('orc-prod-qtd').value) || 1;
-  const preco = parseFloat(document.getElementById('orc-prod-preco').value) || 0;
+  const preco = parseBRL(document.getElementById('orc-prod-preco').value);
   // Check if already in list
   const existing = orcItems.find(i => i.nome === orcProdSelecionado.nome && i.espec === orcProdSelecionado.espec);
   if (existing) {
