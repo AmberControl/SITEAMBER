@@ -940,6 +940,7 @@ function fazerLogin(){
   const senha=document.getElementById('login-senha').value.trim();
   const btn=document.querySelector('.login-btn');
   if(btn)btn.textContent='Verificando...';
+
   function tentarLogin(usuarios){
     const perfil=usuarios[senha];
     if(!perfil){
@@ -969,15 +970,18 @@ function fazerLogin(){
         const t=b.getAttribute('onclick')||'';
         if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))b.style.display='none';
       });
-      const csv=document.querySelector('button[onclick="exportCSV()"]')||document.querySelector('button[onclick="exportExcel()"]');
-      if(csv)csv.style.display='none';
-      document.querySelectorAll('button[onclick="exportBackup()"]').forEach(b=>b.style.display='none');
+      ['exportCSV','exportExcel','exportBackup'].forEach(fn=>{
+        const b=document.querySelector(`button[onclick="${fn}()"]`);
+        if(b)b.style.display='none';
+      });
       document.querySelectorAll('label').forEach(b=>{if(b.textContent.includes('Restaurar'))b.style.display='none';});
       const tipoSel=document.getElementById('m-tipo');
       if(tipoSel){Array.from(tipoSel.options).forEach(o=>{if(o.value==='Entrada')o.style.display='none';});tipoSel.value='Saída';}
     }
     load();
   }
+
+  // Always fetch latest passwords from Firebase before validating
   function buscarEValidar(n){
     if(typeof firebaseDB!=='undefined'&&firebaseDB){
       firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
@@ -1164,6 +1168,9 @@ function load(){
         if (!db.boletos) db.boletos = [];
         if (!db.movs) db.movs = [];
         if (!db.produtos) db.produtos = [];
+        if (!db.orcamentos) db.orcamentos = [];
+        if (!db.retiradas) db.retiradas = [];
+        if (!db.usuarios) db.usuarios = JSON.parse(JSON.stringify(PERFIS));
       } else {
         db.produtos = [...DUCHA,...CABO,...OUTROS];
         db.movs = [...MOVS_INIT];
@@ -1207,13 +1214,28 @@ function loadFromLocalStorage(){
   if (perfilAtual) renderAll();
 }
 function save(){
+  // Save locally always
   localStorage.setItem(KEY, JSON.stringify(db));
+  
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      firebaseDB.ref('amber').set(db).then(function() {
+      // Use update() instead of set() to prevent race conditions
+      // Each device only writes what it changed, never overwriting others
+      const updates = {
+        'amber/produtos': db.produtos || [],
+        'amber/movs': db.movs || [],
+        'amber/boletos': db.boletos || [],
+        'amber/compras': db.compras || [],
+        'amber/orcamentos': db.orcamentos || [],
+        'amber/retiradas': db.retiradas || [],
+        'amber/usuarios': db.usuarios || {},
+      };
+      
+      firebaseDB.ref().update(updates).then(function() {
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         document.getElementById('last-save').textContent = 'Salvo às ' + now;
       }).catch(function(error) {
+        console.error('Firebase update error:', error);
         document.getElementById('last-save').textContent = 'Salvo localmente';
       });
     } else {
