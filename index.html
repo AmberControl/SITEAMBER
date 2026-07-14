@@ -971,7 +971,7 @@ function fazerLogin(){
         if(t.includes('boletos')||t.includes('produtos')||t.includes('painel')||t.includes('compras'))b.style.display='none';
       });
       ['exportCSV','exportExcel','exportBackup'].forEach(fn=>{
-        const b=document.querySelector(`button[onclick="${fn}()"]`);
+        const b=document.querySelector('button[onclick="'+fn+'()"]');
         if(b)b.style.display='none';
       });
       document.querySelectorAll('label').forEach(b=>{if(b.textContent.includes('Restaurar'))b.style.display='none';});
@@ -981,7 +981,6 @@ function fazerLogin(){
     load();
   }
 
-  // Always fetch latest passwords from Firebase before validating
   function buscarEValidar(n){
     if(typeof firebaseDB!=='undefined'&&firebaseDB){
       firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
@@ -1214,28 +1213,25 @@ function loadFromLocalStorage(){
   if (perfilAtual) renderAll();
 }
 function save(){
-  // Save locally always
   localStorage.setItem(KEY, JSON.stringify(db));
-  
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      // Use update() instead of set() to prevent race conditions
-      // Each device only writes what it changed, never overwriting others
-      const updates = {
-        'amber/produtos': db.produtos || [],
-        'amber/movs': db.movs || [],
-        'amber/boletos': db.boletos || [],
-        'amber/compras': db.compras || [],
-        'amber/orcamentos': db.orcamentos || [],
-        'amber/retiradas': db.retiradas || [],
-        'amber/usuarios': db.usuarios || {},
-      };
+      // Use update() to avoid overwriting other users' data
+      const updates = {};
+      updates['amber/produtos'] = db.produtos || [];
+      updates['amber/movs'] = db.movs || [];
+      updates['amber/boletos'] = db.boletos || [];
+      updates['amber/compras'] = db.compras || [];
+      updates['amber/orcamentos'] = db.orcamentos || [];
+      updates['amber/retiradas'] = db.retiradas || [];
+      if(db.usuarios) updates['amber/usuarios'] = db.usuarios;
       
       firebaseDB.ref().update(updates).then(function() {
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         document.getElementById('last-save').textContent = 'Salvo às ' + now;
       }).catch(function(error) {
-        console.error('Firebase update error:', error);
+        // Fallback to set if update fails
+        firebaseDB.ref('amber').set(db);
         document.getElementById('last-save').textContent = 'Salvo localmente';
       });
     } else {
