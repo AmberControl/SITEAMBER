@@ -1924,7 +1924,7 @@ function addParcelaExtra() {
     <div class="field"><label>Vencimento ${num}ª parcela</label><input type="date" class="pe-venc" onchange="autoMesParcela(this)"></div>
     <div class="field"><label>Valor ${num}ª parcela (R$)</label>
       <div style="display:flex;gap:6px">
-        <input type="number" step="0.01" class="pe-val" placeholder="0,00" oninput="atualizarRestante()" style="flex:1">
+        <input type="text" inputmode="decimal" class="pe-val" placeholder="0,00" oninput="atualizarRestante()" style="flex:1">
         <button type="button" class="btn btn-danger btn-sm" style="margin-top:0;align-self:flex-end" onclick="this.closest('.parcela-extra-row').remove();atualizarRestante()">✕</button>
       </div>
     </div>
@@ -1987,7 +1987,7 @@ function salvarEditBoleto() {
     const valEl = row.querySelector('.pe-val');
     const mesEl = row.querySelector('.pe-mes');
     const vencDate = vencEl?.value;
-    const valParcela = parseFloat(valEl?.value)||0;
+    const valParcela = parseBRL(valEl?.value);
     if(vencDate && valParcela > 0) {
       const vencStr = new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
       db.boletos.push({
