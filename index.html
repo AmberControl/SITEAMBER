@@ -316,11 +316,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
       </div>
       <div class="form-grid">
         <div class="field"><label>Mês de referência</label>
-          <select id="b-mes">
-            <option>Maio/2026</option><option>Junho/2026</option><option>Julho/2026</option>
-            <option>Agosto/2026</option><option>Setembro/2026</option><option>Outubro/2026</option>
-            <option>Novembro/2026</option><option>Dezembro/2026</option>
-          </select>
+          <select id="b-mes"></select>
         </div>
         <div class="field" style="grid-column:1/-1"><label>Observação</label>
           <input id="b-obs" placeholder="NF, número do pedido, referência...">
@@ -459,11 +455,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
           </select>
         </div>
         <div class="field"><label>Mês de referência</label>
-          <select id="eb-mes">
-            <option>Maio/2026</option><option>Junho/2026</option><option>Julho/2026</option>
-            <option>Agosto/2026</option><option>Setembro/2026</option><option>Outubro/2026</option>
-            <option>Novembro/2026</option><option>Dezembro/2026</option>
-          </select>
+          <select id="eb-mes"></select>
         </div>
       </div>
       <div class="form-grid">
@@ -1534,6 +1526,11 @@ function isRecebido(pgto){
 }
 
 function populateRecMesSelect(){
+  // Also init month selects if empty
+  if(document.getElementById('b-mes') && !document.getElementById('b-mes').options.length)
+    gerarOpcoesMeses('b-mes');
+  if(document.getElementById('eb-mes') && !document.getElementById('eb-mes').options.length)
+    gerarOpcoesMeses('eb-mes');
   const sel=document.getElementById('rec-mes');if(!sel)return;
   const cur=sel.value;
   const meses=[...new Set(db.boletos.map(b=>b.mes))].sort((a,b)=>{
@@ -1546,6 +1543,7 @@ function populateRecMesSelect(){
 
 function renderBoletos(){
   populateRecMesSelect();
+  gerarOpcoesMeses('b-mes');
   const filtroMes=document.getElementById('rec-mes')?.value||'';
   const filtroStatus=document.getElementById('rec-status')?.value||'';
   const filtroPgto=document.getElementById('rec-pgto')?.value||'';
@@ -1632,6 +1630,9 @@ function renderBoletos(){
   }).join('');
 }
 
+function initBoletForm(){
+  gerarOpcoesMeses('b-mes');
+}
 function addBoleto(){
   const venc=document.getElementById('b-venc').value;
   const cli=document.getElementById('b-cli').value.trim();
@@ -1901,7 +1902,7 @@ function editarBoleto(idx) {
   document.getElementById('eb-cli').value = b.cli||'';
   document.getElementById('eb-val').value = b.val||'';
   document.getElementById('eb-pgto').value = b.pgto||'Boleto';
-  document.getElementById('eb-mes').value = b.mes||'Julho/2026';
+  gerarOpcoesMeses('eb-mes', b.mes);
   document.getElementById('eb-obs').value = b.obs||'';
   // Clear parcelas extras
   document.getElementById('parcelas-extras-lista').innerHTML = '';
@@ -1937,6 +1938,17 @@ function addParcelaExtra() {
       </select>
     </div>`;
   container.appendChild(div);
+  // Populate month select dynamically
+  div.querySelectorAll('.pe-mes').forEach(sel => gerarOpcoesMeses(sel.id||'', ''));
+  // Since no id, populate directly
+  const peSels = div.querySelectorAll('.pe-mes');
+  peSels.forEach(sel => {
+    const mnames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const hoje=new Date();
+    const opcoes=[];
+    for(let i=-2;i<=24;i++){const d=new Date(hoje.getFullYear(),hoje.getMonth()+i,1);opcoes.push(mnames[d.getMonth()]+'/'+d.getFullYear());}
+    sel.innerHTML=opcoes.map(m=>`<option value="${m}">${m}</option>`).join('');
+  });
   atualizarRestante();
 }
 
@@ -1990,8 +2002,15 @@ function salvarEditBoleto() {
     const valParcela = parseBRL(valEl?.value);
     if(vencDate && valParcela > 0) {
       const vencStr = new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
+      // Auto-calculate month from vencimento date if mes select is empty
+      let mesParcela = mesEl?.value;
+      if(!mesParcela) {
+        const d = new Date(vencDate+'T12:00:00');
+        const mnames=['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+        mesParcela = mnames[d.getMonth()]+'/'+d.getFullYear();
+      }
       db.boletos.push({
-        mes: mesEl?.value||b.mes,
+        mes: mesParcela,
         venc: vencStr,
         cli: b.cli,
         val: valParcela,
@@ -3179,6 +3198,22 @@ function parseBRL(v){
     v = v.replace(',','.');
   // Otherwise plain number: 1234.56
   return parseFloat(v)||0;
+}
+
+
+function gerarOpcoesMeses(selectId, valorAtual){
+  const sel = document.getElementById(selectId);
+  if(!sel) return;
+  const mnames = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const hoje = new Date();
+  const opcoes = [];
+  // Generate 12 months back and 24 months forward
+  for(let i = -12; i <= 24; i++){
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() + i, 1);
+    opcoes.push(mnames[d.getMonth()] + '/' + d.getFullYear());
+  }
+  sel.innerHTML = opcoes.map(m => `<option value="${m}" ${m===(valorAtual||'')?'selected':''}>${m}</option>`).join('');
+  if(valorAtual) sel.value = valorAtual;
 }
 
 </script>
