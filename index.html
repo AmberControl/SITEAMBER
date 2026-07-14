@@ -302,7 +302,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
       <div class="form-grid">
         <div class="field"><label>Data / Vencimento</label><input id="b-venc" type="date"></div>
         <div class="field"><label>Cliente</label><input id="b-cli" placeholder="Nome do cliente"></div>
-        <div class="field"><label>Valor (R$)</label><input id="b-val" type="number" step="0.01" placeholder="0,00"></div>
+        <div class="field"><label>Valor (R$)</label><input id="b-val" type="text" inputmode="decimal" placeholder="0,00"></div>
         <div class="field"><label>Forma de pagamento</label>
           <select id="b-pgto">
             <option value="Boleto">Boleto (a receber)</option>
@@ -446,7 +446,7 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
       <div style="font-size:11px;font-weight:600;color:var(--text3);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Parcela atual</div>
       <div class="form-grid">
         <div class="field"><label>Data / Vencimento</label><input id="eb-venc" type="date" onchange="autoMesParcelaAtual()"></div>
-        <div class="field"><label>Valor (R$)</label><input id="eb-val" type="number" step="0.01" oninput="atualizarRestante()"></div>
+        <div class="field"><label>Valor (R$)</label><input id="eb-val" type="text" inputmode="decimal" placeholder="0,00" oninput="atualizarRestante()"></div>
         <div class="field"><label>Forma de pagamento</label>
           <select id="eb-pgto">
             <option value="Boleto">Boleto (a receber)</option>
@@ -1361,7 +1361,7 @@ function addParcela(){
 
 function updateBoletoInfo(){
   const info=document.getElementById('boleto-total-info');if(!info)return;
-  const vals=[...document.querySelectorAll('.b-val')].map(i=>parseFloat(i.value)||0);
+  const vals=[...document.querySelectorAll('.b-val')].map(i=>parseBRL(i.value));
   const total=vals.reduce((s,v)=>s+v,0);
   const valorGeral=parseFloat(document.getElementById('m-valor').value)||0;
   const diff=Math.abs(valorGeral-total);
@@ -1404,7 +1404,7 @@ function registrarMov(){
     const parcelasInfo=[];
     vencs.forEach((v,i)=>{
       const vencDate=v.value;
-      const valParcela=parseFloat(vals[i]?.value)||0;
+      const valParcela=parseBRL(vals[i]?.value);
       if(vencDate&&valParcela>0){
         const d=new Date(vencDate+'T12:00:00');
         const vencStr=d.toLocaleDateString('pt-BR');
@@ -1635,7 +1635,7 @@ function renderBoletos(){
 function addBoleto(){
   const venc=document.getElementById('b-venc').value;
   const cli=document.getElementById('b-cli').value.trim();
-  const val=parseFloat(document.getElementById('b-val').value)||0;
+  const val=parseBRL(document.getElementById('b-val').value);
   const mes=document.getElementById('b-mes').value;
   const pgto=document.getElementById('b-pgto').value||'Boleto';
   const obs=document.getElementById('b-obs').value.trim();
@@ -1958,8 +1958,8 @@ function autoMesParcela(input) {
 }
 
 function atualizarRestante() {
-  const valAtual = parseFloat(document.getElementById('eb-val').value)||0;
-  const extras = [...document.querySelectorAll('.pe-val')].reduce((s,i)=>s+(parseFloat(i.value)||0),0);
+  const valAtual = parseBRL(document.getElementById('eb-val').value);
+  const extras = [...document.querySelectorAll('.pe-val')].reduce((s,i)=>s+(parseBRL(i.value)),0);
   const total = valAtual + extras;
   const el = document.getElementById('parcelas-restante');
   if(extras > 0) {
@@ -1975,7 +1975,7 @@ function salvarEditBoleto() {
   const vencRaw = document.getElementById('eb-venc').value;
   b.venc = vencRaw ? new Date(vencRaw+'T12:00:00').toLocaleDateString('pt-BR') : b.venc;
   b.cli = document.getElementById('eb-cli').value.trim();
-  b.val = parseFloat(document.getElementById('eb-val').value)||0;
+  b.val = parseBRL(document.getElementById('eb-val').value);
   b.pgto = document.getElementById('eb-pgto').value;
   b.mes = document.getElementById('eb-mes').value;
   b.obs = document.getElementById('eb-obs').value.trim();
@@ -2604,7 +2604,7 @@ function finalizarPedido(){
     let parcelasAdicionadas=0;
     vencs.forEach((v,i)=>{
       const vencDate=v.value;
-      const valParcela=parseFloat(vals[i]?.value)||0;
+      const valParcela=parseBRL(vals[i]?.value);
       if(vencDate&&valParcela>0){
         const vencStr=new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
         const mesParcela=getMesFromDate(vencDate);
@@ -3164,6 +3164,22 @@ function autoMesParcelaAtual() {
     load();
   } catch(e) { console.log('Session restore error:', e); }
 })();
+
+
+function parseBRL(v){
+  if(typeof v === 'number') return v;
+  if(!v) return 0;
+  // Remove R$, spaces, then handle both . and , as decimal
+  v = String(v).trim().replace(/R\$\s*/,'');
+  // If has both . and , - Brazilian format: 1.234,56
+  if(v.includes('.') && v.includes(','))
+    v = v.replace(/\./g,'').replace(',','.');
+  // If only comma - decimal comma: 1234,56
+  else if(v.includes(','))
+    v = v.replace(',','.');
+  // Otherwise plain number: 1234.56
+  return parseFloat(v)||0;
+}
 
 </script>
 
