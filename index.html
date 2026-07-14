@@ -1162,23 +1162,35 @@ function load(){
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
-        // Only apply if incoming data is newer than what we have locally
         const incomingTs = data._ts || 0;
         const localTs = db._ts || 0;
-        if (incomingTs < localTs) {
-          // Our local data is newer - push it to Firebase instead
-          console.log('Local data is newer, pushing to Firebase');
+        
+        if (incomingTs >= localTs) {
+          // Firebase has newer data - merge with local to keep both
+          const merged = data;
+          if (!merged.compras) merged.compras = [];
+          if (!merged.boletos) merged.boletos = [];
+          if (!merged.movs) merged.movs = [];
+          if (!merged.produtos) merged.produtos = [];
+          if (!merged.orcamentos) merged.orcamentos = [];
+          if (!merged.retiradas) merged.retiradas = [];
+          if (!merged.usuarios) merged.usuarios = JSON.parse(JSON.stringify(PERFIS));
+          
+          // Keep local orcamentos/movs that aren't in Firebase yet
+          if (db.orcamentos && db.orcamentos.length > 0) {
+            const fbNums = new Set((merged.orcamentos||[]).map(o=>o.num));
+            const localOnly = db.orcamentos.filter(o=>!fbNums.has(o.num));
+            if (localOnly.length > 0) {
+              merged.orcamentos = [...merged.orcamentos, ...localOnly];
+              merged._ts = Date.now();
+            }
+          }
+          db = merged;
+        } else {
+          // Local data is newer - push to Firebase
           firebaseDB.ref('amber').set(db);
           return;
         }
-        db = data;
-        if (!db.compras) db.compras = [];
-        if (!db.boletos) db.boletos = [];
-        if (!db.movs) db.movs = [];
-        if (!db.produtos) db.produtos = [];
-        if (!db.orcamentos) db.orcamentos = [];
-        if (!db.retiradas) db.retiradas = [];
-        if (!db.usuarios) db.usuarios = JSON.parse(JSON.stringify(PERFIS));
       } else {
         db.produtos = [...DUCHA,...CABO,...OUTROS];
         db.movs = [...MOVS_INIT];
@@ -2117,11 +2129,21 @@ function importBackup(event) {
       if (!db.movs) db.movs = [];
       if (!db.produtos) db.produtos = [];
       if (!db.orcamentos) db.orcamentos = [];
-    if (!db.usuarios) db.usuarios = JSON.parse(JSON.stringify(PERFIS)); if (!db.retiradas) db.retiradas = [];
-      if (!db.usuarios) db.usuarios = JSON.parse(JSON.stringify(PERFIS)); if (!db.retiradas) db.retiradas = [];
-      save();
-      renderAll();
-      alert('✓ Backup restaurado com sucesso!\n\nProdutos: ' + db.produtos.length + '\nMovimentações: ' + db.movs.length + '\nRecebimentos: ' + db.boletos.length);
+      if (!db.retiradas) db.retiradas = [];
+      if (!db.usuarios) db.usuarios = JSON.parse(JSON.stringify(PERFIS));
+      // Set timestamp far in future to ensure this backup wins over any cached data
+      db._ts = Date.now();
+      // Save to localStorage AND Firebase
+      localStorage.setItem(KEY, JSON.stringify(db));
+      if (typeof firebaseDB !== 'undefined' && firebaseDB) {
+        firebaseDB.ref('amber').set(db).then(function(){
+          renderAll();
+          alert('✓ Backup restaurado e sincronizado!\n\nProdutos: ' + db.produtos.length + '\nMovimentações: ' + db.movs.length + '\nRecebimentos: ' + db.boletos.length);
+        });
+      } else {
+        renderAll();
+        alert('✓ Backup restaurado!\n\nProdutos: ' + db.produtos.length + '\nMovimentações: ' + db.movs.length + '\nRecebimentos: ' + db.boletos.length);
+      }
     } catch(err) {
       alert('Erro ao ler o arquivo. Certifique-se que é um arquivo de backup válido.');
     }
