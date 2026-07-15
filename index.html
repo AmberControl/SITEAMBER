@@ -984,7 +984,8 @@ function fazerLogin(){
   function buscarEValidar(n){
     if(typeof firebaseDB!=='undefined'&&firebaseDB){
       firebaseDB.ref('amber/usuarios').once('value').then(function(snap){
-        const u=snap.val();
+        const uRaw=snap.val();
+        const u=uRaw?decodeUsuariosFromFirebase(uRaw):null;
         if(u&&Object.keys(u).length>0){db.usuarios=u;tentarLogin(u);}
         else tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);
       }).catch(function(){tentarLogin((db&&db.usuarios)?db.usuarios:PERFIS);});
@@ -1156,6 +1157,26 @@ const COMPRAS_INIT=[
 ];
 
 // ---- Sync helpers (evitam perda de dados quando 2+ pessoas salvam ao mesmo tempo) ----
+// ---- Firebase não aceita . # $ / [ ] como caractere de chave. Como a senha é usada como
+// chave dentro de "usuarios", codificamos esses caracteres só na hora de gravar/ler do
+// Firebase; na memória local (db.usuarios) a senha continua sempre no formato original. ----
+function encodeUserKey(k){
+  return String(k).replace(/[.#$\/\[\]]/g, function(c){ return '%'+c.charCodeAt(0).toString(16); });
+}
+function decodeUserKey(k){
+  return String(k).replace(/%([0-9a-f]{2})/gi, function(_, hex){ return String.fromCharCode(parseInt(hex,16)); });
+}
+function encodeUsuariosForFirebase(usuarios){
+  const out = {};
+  Object.keys(usuarios||{}).forEach(function(k){ out[encodeUserKey(k)] = usuarios[k]; });
+  return out;
+}
+function decodeUsuariosFromFirebase(usuarios){
+  const out = {};
+  Object.keys(usuarios||{}).forEach(function(k){ out[decodeUserKey(k)] = usuarios[k]; });
+  return out;
+}
+
 window._syncBase = null; // último estado conhecido do servidor (baseline para calcular o que mudou localmente)
 
 function genId(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8); }
@@ -1233,7 +1254,8 @@ function load(){
         if (!data.produtos) data.produtos = [];
         if (!data.orcamentos) data.orcamentos = [];
         if (!data.retiradas) data.retiradas = [];
-        if (!data.usuarios) data.usuarios = JSON.parse(JSON.stringify(PERFIS));
+        if (data.usuarios) data.usuarios = decodeUsuariosFromFirebase(data.usuarios);
+        else data.usuarios = JSON.parse(JSON.stringify(PERFIS));
         db = data;
         window._syncBase = JSON.parse(JSON.stringify(db)); // guarda o estado do servidor como novo baseline
       } else {
@@ -1295,7 +1317,9 @@ function save(){
           merged[k] = mergeCollectionById(serverData[k], localSnapshot[k], baseSnapshot ? baseSnapshot[k] : null);
         });
         const usuariosMudou = !baseSnapshot || JSON.stringify(localSnapshot.usuarios) !== JSON.stringify(baseSnapshot.usuarios);
-        merged.usuarios = usuariosMudou ? localSnapshot.usuarios : (serverData.usuarios || localSnapshot.usuarios);
+        const serverUsuariosDecoded = decodeUsuariosFromFirebase(serverData.usuarios);
+        const usuariosFinal = usuariosMudou ? localSnapshot.usuarios : (serverUsuariosDecoded || localSnapshot.usuarios);
+        merged.usuarios = encodeUsuariosForFirebase(usuariosFinal);
         merged._ts = Date.now();
         return merged;
       }, function(error, committed, snapshot){
@@ -1306,6 +1330,7 @@ function save(){
         }
         if (committed && snapshot && snapshot.val()) {
           db = snapshot.val();
+          if (db.usuarios) db.usuarios = decodeUsuariosFromFirebase(db.usuarios);
           window._syncBase = JSON.parse(JSON.stringify(db));
           if (perfilAtual) {
             renderAll();
@@ -2206,7 +2231,9 @@ function importBackup(event) {
       // Save to localStorage AND Firebase
       localStorage.setItem(KEY, JSON.stringify(db));
       if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-        firebaseDB.ref('amber').set(db).then(function(){
+        const payload = JSON.parse(JSON.stringify(db));
+        payload.usuarios = encodeUsuariosForFirebase(payload.usuarios);
+        firebaseDB.ref('amber').set(payload).then(function(){
           window._syncBase = JSON.parse(JSON.stringify(db));
           renderAll();
           alert('✓ Backup restaurado e sincronizado!\n\nProdutos: ' + db.produtos.length + '\nMovimentações: ' + db.movs.length + '\nRecebimentos: ' + db.boletos.length);
@@ -2950,9 +2977,11 @@ function forcarAtualizacao(){
           if (!db.movs) db.movs = [];
           if (!db.produtos) db.produtos = [];
           if (!db.orcamentos) db.orcamentos = [];
-          if (!db.usuarios) db.usuarios = JSON.parse(JSON.stringify(PERFIS)); if (!db.retiradas) db.retiradas = [];
+          if (db.usuarios) db.usuarios = decodeUsuariosFromFirebase(db.usuarios);
+          else db.usuarios = JSON.parse(JSON.stringify(PERFIS));
           if (!db.retiradas) db.retiradas = [];
         }
+        window._syncBase = JSON.parse(JSON.stringify(db));
         renderAll();
         document.getElementById('last-save').textContent = 'Atualizado às ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
       });
