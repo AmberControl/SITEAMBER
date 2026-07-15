@@ -1155,6 +1155,71 @@ const COMPRAS_INIT=[
   {cod:'—',        desc:'Maxi Ducha 220V/5500W',                    vcompra:0,      un:'UN', qtd:200, vvenda:0,      data:'22/06/2026'},
 ];
 
+// ---- Sync helpers (evitam perda de dados quando 2+ pessoas salvam ao mesmo tempo) ----
+window._syncBase = null; // último estado conhecido do servidor (baseline para calcular o que mudou localmente)
+
+function genId(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8); }
+
+// Garante que todo item novo (ainda sem _id) recebe um identificador único antes de salvar
+function ensureIds(){
+  ['movs','boletos','compras','orcamentos','retiradas'].forEach(function(key){
+    if (!Array.isArray(db[key])) return;
+    db[key].forEach(function(item){ if (!item._id) item._id = genId(); });
+  });
+}
+
+// Faz o merge de uma coleção (movs/boletos/compras/orcamentos/retiradas) entre o que está
+// no servidor agora e o que está local, usando _id como chave. Une adições dos dois lados
+// e só remove um item se ele já era conhecido localmente (base) e foi removido de propósito.
+function mergeCollectionById(serverArr, localArr, baseArr){
+  serverArr = serverArr||[]; localArr = localArr||[]; baseArr = baseArr||[];
+  const baseIds = new Set(baseArr.map(function(x){return x._id;}).filter(Boolean));
+  const serverById = {}; serverArr.forEach(function(x){ if (x._id) serverById[x._id]=x; });
+  const localById = {}; localArr.forEach(function(x){ if (x._id) localById[x._id]=x; });
+  const allIds = new Set(Object.keys(serverById).concat(Object.keys(localById)));
+  const result = [];
+  allIds.forEach(function(id){
+    const s = serverById[id], l = localById[id];
+    if (l && s) { result.push(l); }               // existe nos dois -> versão local (foi editada agora) vence
+    else if (l && !s) { result.push(l); }          // só existe local -> item novo, mantém
+    else if (!l && s) {
+      if (baseIds.has(id)) { /* removido de propósito localmente -> não recoloca */ }
+      else { result.push(s); }                     // outro usuário adicionou depois da nossa última sincronia -> mantém
+    }
+  });
+  // itens sem _id (registros antigos, antes desta correção) ficam como estavam localmente
+  localArr.forEach(function(x){ if (!x._id) result.push(x); });
+  return result;
+}
+
+function _prodKey(p){ return (p.cod && p.cod!=='—') ? ('cod:'+p.cod) : ('ne:'+p.nome+'|'+p.espec); }
+
+// Faz o merge do estoque aplicando a DIFERENÇA (delta) de quantidade em cima do valor mais
+// recente do servidor, em vez de sobrescrever com o valor absoluto local. Isso evita que dois
+// vendedores baixando estoque ao mesmo tempo apaguem a baixa um do outro.
+function mergeProdutos(serverArr, localArr, baseArr){
+  serverArr = serverArr||[]; localArr = localArr||[]; baseArr = baseArr||[];
+  const baseByKey = {}; baseArr.forEach(function(p){ baseByKey[_prodKey(p)] = p; });
+  const serverByKey = {}; serverArr.forEach(function(p){ serverByKey[_prodKey(p)] = p; });
+  const result = []; const seen = new Set();
+  localArr.forEach(function(p){
+    const k = _prodKey(p); seen.add(k);
+    const s = serverByKey[k];
+    if (!s) { result.push(p); return; } // produto novo (cadastrado agora), mantém
+    const b = baseByKey[k];
+    const merged = Object.assign({}, s);
+    const baseQtd = b ? b.qtd : s.qtd;
+    const delta = p.qtd - baseQtd;
+    merged.qtd = Math.max(0, s.qtd + delta); // aplica só a mudança feita nesta sessão sobre o valor atual do servidor
+    ['min','max','preco','custo','atacado','nome','espec','marca','linha','unid','cod'].forEach(function(f){
+      if (!b || JSON.stringify(p[f]) !== JSON.stringify(b[f])) merged[f] = p[f]; // outros campos: local só sobrescreve se foi de fato editado
+    });
+    result.push(merged);
+  });
+  serverArr.forEach(function(p){ if (!seen.has(_prodKey(p))) result.push(p); });
+  return result;
+}
+
 function load(){
   try {
     if (typeof firebaseDB === 'undefined' || !firebaseDB) throw new Error('Firebase not available');
@@ -1162,35 +1227,15 @@ function load(){
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
-        const incomingTs = data._ts || 0;
-        const localTs = db._ts || 0;
-        
-        if (incomingTs >= localTs) {
-          // Firebase has newer data - merge with local to keep both
-          const merged = data;
-          if (!merged.compras) merged.compras = [];
-          if (!merged.boletos) merged.boletos = [];
-          if (!merged.movs) merged.movs = [];
-          if (!merged.produtos) merged.produtos = [];
-          if (!merged.orcamentos) merged.orcamentos = [];
-          if (!merged.retiradas) merged.retiradas = [];
-          if (!merged.usuarios) merged.usuarios = JSON.parse(JSON.stringify(PERFIS));
-          
-          // Keep local orcamentos/movs that aren't in Firebase yet
-          if (db.orcamentos && db.orcamentos.length > 0) {
-            const fbNums = new Set((merged.orcamentos||[]).map(o=>o.num));
-            const localOnly = db.orcamentos.filter(o=>!fbNums.has(o.num));
-            if (localOnly.length > 0) {
-              merged.orcamentos = [...merged.orcamentos, ...localOnly];
-              merged._ts = Date.now();
-            }
-          }
-          db = merged;
-        } else {
-          // Local data is newer - push to Firebase
-          firebaseDB.ref('amber').set(db);
-          return;
-        }
+        if (!data.compras) data.compras = [];
+        if (!data.boletos) data.boletos = [];
+        if (!data.movs) data.movs = [];
+        if (!data.produtos) data.produtos = [];
+        if (!data.orcamentos) data.orcamentos = [];
+        if (!data.retiradas) data.retiradas = [];
+        if (!data.usuarios) data.usuarios = JSON.parse(JSON.stringify(PERFIS));
+        db = data;
+        window._syncBase = JSON.parse(JSON.stringify(db)); // guarda o estado do servidor como novo baseline
       } else {
         db.produtos = [...DUCHA,...CABO,...OUTROS];
         db.movs = [...MOVS_INIT];
@@ -1234,17 +1279,42 @@ function loadFromLocalStorage(){
   if (perfilAtual) renderAll();
 }
 function save(){
-  db._ts = Date.now(); // timestamp to track which save is newest
+  ensureIds();
+  db._ts = Date.now();
   localStorage.setItem(KEY, JSON.stringify(db));
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      const snapshot = JSON.parse(JSON.stringify(db));
-      firebaseDB.ref('amber').set(snapshot).then(function() {
+      const localSnapshot = JSON.parse(JSON.stringify(db));
+      const baseSnapshot = window._syncBase ? JSON.parse(JSON.stringify(window._syncBase)) : null;
+      firebaseDB.ref('amber').transaction(function(serverData){
+        // Sem dado no servidor ainda -> escreve local direto
+        if (!serverData) return localSnapshot;
+        const merged = {};
+        merged.produtos = mergeProdutos(serverData.produtos, localSnapshot.produtos, baseSnapshot ? baseSnapshot.produtos : null);
+        ['movs','boletos','compras','orcamentos','retiradas'].forEach(function(k){
+          merged[k] = mergeCollectionById(serverData[k], localSnapshot[k], baseSnapshot ? baseSnapshot[k] : null);
+        });
+        const usuariosMudou = !baseSnapshot || JSON.stringify(localSnapshot.usuarios) !== JSON.stringify(baseSnapshot.usuarios);
+        merged.usuarios = usuariosMudou ? localSnapshot.usuarios : (serverData.usuarios || localSnapshot.usuarios);
+        merged._ts = Date.now();
+        return merged;
+      }, function(error, committed, snapshot){
+        const el = document.getElementById('last-save');
+        if (error) {
+          if (el) el.textContent = 'Salvo localmente (erro ao sincronizar)';
+          return;
+        }
+        if (committed && snapshot && snapshot.val()) {
+          db = snapshot.val();
+          window._syncBase = JSON.parse(JSON.stringify(db));
+          if (perfilAtual) {
+            renderAll();
+            if (typeof renderUsuarios === 'function') renderUsuarios();
+          }
+        }
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
-        document.getElementById('last-save').textContent = 'Salvo às ' + now;
-      }).catch(function(error) {
-        document.getElementById('last-save').textContent = 'Salvo localmente';
-      });
+        if (el) el.textContent = 'Salvo às ' + now;
+      }, false);
     } else {
       const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
       document.getElementById('last-save').textContent = 'Salvo às ' + now;
@@ -2137,6 +2207,7 @@ function importBackup(event) {
       localStorage.setItem(KEY, JSON.stringify(db));
       if (typeof firebaseDB !== 'undefined' && firebaseDB) {
         firebaseDB.ref('amber').set(db).then(function(){
+          window._syncBase = JSON.parse(JSON.stringify(db));
           renderAll();
           alert('✓ Backup restaurado e sincronizado!\n\nProdutos: ' + db.produtos.length + '\nMovimentações: ' + db.movs.length + '\nRecebimentos: ' + db.boletos.length);
         });
