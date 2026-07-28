@@ -924,6 +924,27 @@ input:focus,select:focus{border-color:var(--verde);box-shadow:0 0 0 3px rgba(29,
   </div>
 </div>
 
+<!-- Firebase SDK: precisa carregar ANTES do script principal, senão o load() inicial
+     roda com firebaseDB ainda indefinido e a página sempre começa em "Modo offline" -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+<script>
+try {
+  firebase.initializeApp({
+    apiKey: "AIzaSyB6zTKLYrmb4AsCQwOKvLdGSWOVNFUqoDU",
+    authDomain: "ambercomercio.firebaseapp.com",
+    databaseURL: "https://ambercomercio-default-rtdb.firebaseio.com",
+    projectId: "ambercomercio",
+    storageBucket: "ambercomercio.firebasestorage.app",
+    messagingSenderId: "749296990361",
+    appId: "1:749296990361:web:339845e499c8455e3aa008"
+  });
+  window.firebaseDB = firebase.database();
+} catch(e) {
+  window.firebaseDB = null;
+}
+</script>
+
 <script>
 const PERFIS={
   '1234amber': {tipo:'gestor',  nome:'Gestor 1'},
@@ -996,6 +1017,7 @@ function fazerLogin(){
 }
 
 const KEY='amber-v19';
+const PENDING_KEY=KEY+'_pending'; // marca que existe uma alteração local ainda não confirmada pelo Firebase
 let db={produtos:[],movs:[],boletos:[]};
 let editIdx=null;
 
@@ -1245,6 +1267,16 @@ function load(){
   try {
     if (typeof firebaseDB === 'undefined' || !firebaseDB) throw new Error('Firebase not available');
     document.getElementById('last-save').textContent = 'Conectando...';
+    // Se o app/aba fechou da última vez antes da gravação anterior confirmar no servidor
+    // (ex: usuário fechou logo após "Confirmar Pedido"), o marcador PENDING_KEY ainda está
+    // setado. Nesse caso não podemos deixar o snapshot do servidor sobrescrever `db` — em
+    // vez disso carregamos o estado local (que tem a alteração não sincronizada) e forçamos
+    // um save() assim que a conexão com o Firebase abrir, para fazer o merge de verdade.
+    const hadPendingLocal = localStorage.getItem(PENDING_KEY) === '1';
+    if (hadPendingLocal) {
+      loadFromLocalStorage();
+      window._recoveringPendingSync = true;
+    }
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
@@ -1256,8 +1288,16 @@ function load(){
         if (!data.retiradas) data.retiradas = [];
         if (data.usuarios) data.usuarios = decodeUsuariosFromFirebase(data.usuarios);
         else data.usuarios = JSON.parse(JSON.stringify(PERFIS));
-        db = data;
-        window._syncBase = JSON.parse(JSON.stringify(db)); // guarda o estado do servidor como novo baseline
+        if (window._recoveringPendingSync) {
+          // Mantém `db` local (com a alteração pendente) como está; usa o snapshot do
+          // servidor só como baseline para o merge, e reenvia via save().
+          window._syncBase = JSON.parse(JSON.stringify(data));
+          window._recoveringPendingSync = false;
+          save();
+        } else {
+          db = data;
+          window._syncBase = JSON.parse(JSON.stringify(db)); // guarda o estado do servidor como novo baseline
+        }
       } else {
         db.produtos = [...DUCHA,...CABO,...OUTROS];
         db.movs = [...MOVS_INIT];
@@ -1306,6 +1346,13 @@ function save(){
   localStorage.setItem(KEY, JSON.stringify(db));
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
+      // Marca que existe uma gravação em andamento ainda não confirmada pelo servidor.
+      // Se o app/aba fechar antes da transação terminar, esse marcador continua no
+      // localStorage e o próximo load() detecta e tenta sincronizar de novo automaticamente.
+      localStorage.setItem(PENDING_KEY, '1');
+      window._syncInFlight = true;
+      const el0 = document.getElementById('last-save');
+      if (el0) el0.textContent = 'Sincronizando...';
       const localSnapshot = JSON.parse(JSON.stringify(db));
       const baseSnapshot = window._syncBase ? JSON.parse(JSON.stringify(window._syncBase)) : null;
       firebaseDB.ref('amber').transaction(function(serverData){
@@ -1323,8 +1370,11 @@ function save(){
         merged._ts = Date.now();
         return merged;
       }, function(error, committed, snapshot){
+        window._syncInFlight = false;
         const el = document.getElementById('last-save');
         if (error) {
+          // Não limpa PENDING_KEY: na próxima abertura do app, load() vai notar que
+          // ainda há uma gravação pendente e vai tentar sincronizar de novo sozinho.
           if (el) el.textContent = 'Salvo localmente (erro ao sincronizar)';
           return;
         }
@@ -1332,10 +1382,14 @@ function save(){
           db = snapshot.val();
           if (db.usuarios) db.usuarios = decodeUsuariosFromFirebase(db.usuarios);
           window._syncBase = JSON.parse(JSON.stringify(db));
+          localStorage.setItem(KEY, JSON.stringify(db));
+          localStorage.removeItem(PENDING_KEY); // confirmado pelo servidor, não precisa mais retry
           if (perfilAtual) {
             renderAll();
             if (typeof renderUsuarios === 'function') renderUsuarios();
           }
+        } else {
+          // Transação não commitou (ex: sem rede no momento) — mantém PENDING_KEY para retry.
         }
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         if (el) el.textContent = 'Salvo às ' + now;
@@ -1841,6 +1895,13 @@ function exportExcel(){
 }
 
 load();renderAll();
+window.addEventListener('beforeunload', function(e){
+  if (window._syncInFlight) {
+    e.preventDefault();
+    e.returnValue = '';
+    return '';
+  }
+});
 
 function limparFiltrosCompras(){
   const b=document.getElementById('c-busca'); if(b)b.value='';
@@ -3355,26 +3416,6 @@ function gerarOpcoesMeses(selectId, valorAtual){
   if(valorAtual) sel.value = valorAtual;
 }
 
-</script>
-
-<!-- Firebase SDK -->
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
-<script>
-try {
-  firebase.initializeApp({
-    apiKey: "AIzaSyB6zTKLYrmb4AsCQwOKvLdGSWOVNFUqoDU",
-    authDomain: "ambercomercio.firebaseapp.com",
-    databaseURL: "https://ambercomercio-default-rtdb.firebaseio.com",
-    projectId: "ambercomercio",
-    storageBucket: "ambercomercio.firebasestorage.app",
-    messagingSenderId: "749296990361",
-    appId: "1:749296990361:web:339845e499c8455e3aa008"
-  });
-  window.firebaseDB = firebase.database();
-} catch(e) {
-  window.firebaseDB = null;
-}
 </script>
 
 </body>
