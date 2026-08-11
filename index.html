@@ -996,6 +996,88 @@ const KEY='amber-v19';
 let db={produtos:[],movs:[],boletos:[]};
 let editIdx=null;
 
+// ---- Sincronização segura com o Firebase (evita perda de dados em gravações concorrentes) ----
+// lastSynced = último estado que sabemos que está confirmado no servidor (a "baseline").
+// Comparando db (estado local atual) com lastSynced conseguimos saber exatamente o que
+// mudou aqui desde a última sincronização, e aplicar só essa mudança em cima do estado
+// mais recente do servidor — em vez de sobrescrever tudo, que é o que causava o bug.
+let lastSynced=null;
+// dirty = true enquanto existe um save() em andamento (aguardando confirmação do Firebase).
+let dirty=false;
+
+function uid(){
+  // id único de verdade (não depende do tamanho do array, então nunca colide entre usuários)
+  return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
+}
+
+function _chaveItem(item,i){
+  return (item && item.id) ? ('id:'+item.id) : ('idx:'+i);
+}
+
+// Mescla apenas ADIÇÕES de listas (usado quando chega uma atualização do Firebase
+// enquanto ainda temos um save() em andamento — não mexe em quantidades, só garante
+// que não perdemos itens novos de outros usuários enquanto salvamos os nossos).
+function mergeListsOnly(localDb, remoteData){
+  const merged=JSON.parse(JSON.stringify(localDb||{}));
+  ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(key){
+    const remoteArr=(remoteData&&remoteData[key])||[];
+    const localArr=merged[key]||[];
+    const localKeys=new Set(localArr.map(_chaveItem));
+    const extra=remoteArr.filter(function(it,i){return !localKeys.has(_chaveItem(it,i));});
+    merged[key]=localArr.concat(extra);
+  });
+  return merged;
+}
+
+// Mescla uma lista específica: parte do estado ATUAL do servidor (server), soma os itens
+// que existem em local mas não existiam no baseline nem no servidor (ou seja, itens novos
+// de verdade), e — só para produtos — reaplica a variação (delta) de estoque em cima do
+// valor mais atual do servidor, em vez de simplesmente sobrescrever com o valor local.
+function mergeList(server, local, base, isProdutos){
+  server=server||[];local=local||[];base=base||[];
+  const baseKeys=new Set(base.map(_chaveItem));
+  const serverKeys=new Set(server.map(_chaveItem));
+  const baseByKey={};base.forEach(function(it,i){baseByKey[_chaveItem(it,i)]=it;});
+  const localByKey={};local.forEach(function(it,i){localByKey[_chaveItem(it,i)]=it;});
+
+  const additions=local.filter(function(it,i){
+    const k=_chaveItem(it,i);
+    return !baseKeys.has(k)&&!serverKeys.has(k);
+  });
+
+  let merged=server.concat(additions);
+
+  if(isProdutos){
+    merged=merged.map(function(sItem){
+      if(!sItem||!sItem.id)return sItem;
+      const k='id:'+sItem.id;
+      const bItem=baseByKey[k];
+      const lItem=localByKey[k];
+      if(bItem&&lItem&&typeof lItem.qtd==='number'&&typeof bItem.qtd==='number'){
+        const delta=lItem.qtd-bItem.qtd;
+        if(delta!==0)return Object.assign({},sItem,{qtd:(sItem.qtd||0)+delta});
+      }
+      return sItem;
+    });
+  }
+  return merged;
+}
+
+// Função usada DENTRO da transaction() do Firebase: recebe o valor mais recente do
+// servidor (currentData) e devolve o novo valor a ser gravado. Se outro usuário gravar
+// no meio do caminho, o Firebase chama esta função de novo automaticamente com o dado
+// mais novo — por isso nunca perdemos uma gravação concorrente.
+function reconcile(currentData, local, base){
+  currentData=currentData||{};local=local||{};base=base||{};
+  const result=JSON.parse(JSON.stringify(currentData));
+  ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(key){
+    result[key]=mergeList(result[key],local[key],base[key],key==='produtos');
+  });
+  if(local.usuarios)result.usuarios=local.usuarios;
+  result._ts=Date.now();
+  return result;
+}
+
 const DUCHA=[
   {marca:'Lorenzetti',nome:'Ducha Top Jet',espec:'127V / 5500W',linha:'DUCHA',unid:'un',qtd:76,min:50,max:200,custo:77.32,atacado:102.06,preco:116.91},
   {marca:'Lorenzetti',nome:'Ducha Top Jet',espec:'220V / 6400W',linha:'DUCHA',unid:'un',qtd:82,min:50,max:200,custo:77.32,atacado:102.06,preco:116.91},
@@ -1160,9 +1242,16 @@ function load(){
     firebaseDB.ref('amber').on('value', function(snapshot) {
       const data = snapshot.val();
       if (data) {
-        // Merge Firebase data with local to keep both
-        const merged = mergeData ? mergeData(db, data) : data;
-        db = merged;
+        if (dirty) {
+          // Já existe um save() nosso em andamento: só incorpora itens novos de
+          // outros usuários (por id), sem tocar em quantidades — quem resolve
+          // quantidade é a transaction() do save(), que é a fonte única de verdade.
+          db = mergeListsOnly(db, data);
+        } else {
+          // Nada pendente localmente: pode adotar o estado do servidor direto.
+          db = data;
+        }
+        lastSynced = JSON.parse(JSON.stringify(data));
         if (!db.compras) db.compras = [];
         if (!db.boletos) db.boletos = [];
         if (!db.movs) db.movs = [];
@@ -1209,62 +1298,54 @@ function loadFromLocalStorage(){
   }
   if (perfilAtual) renderAll();
 }
-function mergeData(local, remote) {
-  // Merge two db objects, keeping all unique records from both
-  const merged = JSON.parse(JSON.stringify(remote || local));
-  
-  // Merge orcamentos - keep all unique by num
-  const fbOrcs = new Set((remote.orcamentos||[]).map(o=>o.num).filter(Boolean));
-  const localOrcs = (local.orcamentos||[]).filter(o=>o.num && !fbOrcs.has(o.num));
-  if (localOrcs.length > 0) merged.orcamentos = [...(remote.orcamentos||[]), ...localOrcs];
-  
-  // Merge movs - keep all unique by data+prod+resp combination  
-  const fbMovKeys = new Set((remote.movs||[]).map(m=>m.data+'|'+m.prod+'|'+m.resp+'|'+m.qtd));
-  const localMovs = (local.movs||[]).filter(m=>!fbMovKeys.has(m.data+'|'+m.prod+'|'+m.resp+'|'+m.qtd));
-  if (localMovs.length > 0) merged.movs = [...(remote.movs||[]), ...localMovs];
-  
-  // Merge retiradas
-  const fbRetNums = new Set((remote.retiradas||[]).map(r=>r.num).filter(Boolean));
-  const localRets = (local.retiradas||[]).filter(r=>r.num && !fbRetNums.has(r.num));
-  if (localRets.length > 0) merged.retiradas = [...(remote.retiradas||[]), ...localRets];
-  
-  // For produtos, boletos, compras - use whichever has more items (or local if equal)
-  if ((local.produtos||[]).length > (remote.produtos||[]).length) merged.produtos = local.produtos;
-  if ((local.boletos||[]).length > (remote.boletos||[]).length) merged.boletos = local.boletos;
-  if ((local.compras||[]).length > (remote.compras||[]).length) merged.compras = local.compras;
-  
-  // Always use local usuarios (most recently changed)
-  if (local.usuarios) merged.usuarios = local.usuarios;
-  
-  merged._ts = Date.now();
-  return merged;
-}
-
 function save(){
   localStorage.setItem(KEY, JSON.stringify(db));
   try {
     if (typeof firebaseDB !== 'undefined' && firebaseDB) {
-      // Fetch current Firebase data, merge with local, then save
-      firebaseDB.ref('amber').once('value').then(function(snap) {
-        const remote = snap.val();
-        const toSave = remote ? mergeData(db, remote) : db;
-        toSave._ts = Date.now();
-        db = toSave; // update local with merged
+      dirty = true;
+      // Snapshot do estado local e da baseline NO MOMENTO da chamada — é isso que
+      // permite calcular "o que eu mudei desde a última sincronização", que é o que
+      // precisa ser reaplicado em cima do valor mais atual do servidor.
+      const pendingLocal = JSON.parse(JSON.stringify(db));
+      const baseline = lastSynced ? JSON.parse(JSON.stringify(lastSynced)) : null;
+      // transaction() faz leitura+escrita atômica: se outro usuário gravar no meio
+      // do caminho, o Firebase detecta o conflito e chama a função de novo
+      // automaticamente com o dado mais recente, até conseguir gravar sem conflito.
+      // É isso que elimina a "race condition" (antes o app fazia um once()+set()
+      // manual, que tinha uma janela onde duas gravações simultâneas se perdiam).
+      firebaseDB.ref('amber').transaction(function(currentData){
+        return reconcile(currentData, pendingLocal, baseline);
+      }, function(error, committed, snapshot){
+        dirty = false;
+        if (error) {
+          document.getElementById('last-save').textContent = 'Erro ao salvar — tentando novamente...';
+          return;
+        }
+        if (!committed || !snapshot) return;
+        const finalData = snapshot.val();
+        if (!finalData) return;
+        db = finalData;
+        if (!db.compras) db.compras = [];
+        if (!db.boletos) db.boletos = [];
+        if (!db.movs) db.movs = [];
+        if (!db.produtos) db.produtos = [];
+        if (!db.orcamentos) db.orcamentos = [];
+        if (!db.retiradas) db.retiradas = [];
+        lastSynced = JSON.parse(JSON.stringify(finalData));
         localStorage.setItem(KEY, JSON.stringify(db));
-        return firebaseDB.ref('amber').set(toSave);
-      }).then(function() {
         const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
         document.getElementById('last-save').textContent = 'Salvo às ' + now;
-      }).catch(function(error) {
-        // Fallback: save directly without merge
-        firebaseDB.ref('amber').set(db);
-        document.getElementById('last-save').textContent = 'Salvo localmente';
-      });
+        if (perfilAtual) {
+          renderAll();
+          if (typeof renderUsuarios === 'function') renderUsuarios();
+        }
+      }, false);
     } else {
       const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
       document.getElementById('last-save').textContent = 'Salvo às ' + now;
     }
   } catch(e) {
+    dirty = false;
     const now = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('last-save').textContent = 'Salvo às ' + now;
   }
@@ -1445,14 +1526,14 @@ function registrarMov(){
         const d=new Date(vencDate+'T12:00:00');
         const vencStr=d.toLocaleDateString('pt-BR');
         const mes=getMesFromDate(vencDate);
-        db.boletos.push({mes,venc:vencStr,cli:empresa||'Cliente',val:valParcela});
+        db.boletos.push({id:uid(),mes,venc:vencStr,cli:empresa||'Cliente',val:valParcela});
         parcelasInfo.push(`venc. ${vencStr} R$ ${valParcela.toFixed(2).replace('.',',')}`);
         boletosAdicionados++;
       }
     });
     if(parcelasInfo.length>0)obsFinal=(obs?obs+' | ':'')+parcelasInfo.join(', ');
   }
-  db.movs.push({data:now,prod:p.nome,espec:p.espec,tipo,qtd,resp,empresa,cnpj,valor,pgto,obs:obsFinal});
+  db.movs.push({id:uid(),data:now,prod:p.nome,espec:p.espec,tipo,qtd,resp,empresa,cnpj,valor,pgto,obs:obsFinal});
   // Auto-add to recebimentos if it's a sale with payment
   if(tipo==='Saída'&&valor>0&&pgto&&pgto!=='—'){
     const mesRec=getMesFromDate(now);
@@ -1461,7 +1542,7 @@ function registrarMov(){
     } else {
       // PIX, Dinheiro, Cartão - add as received immediately
       if(!db.boletos)db.boletos=[];
-      db.boletos.push({mes:mesRec,venc:now,cli:empresa||'—',val:valor,pgto,obs:(obsFinal||'').substring(0,80)});
+      db.boletos.push({id:uid(),mes:mesRec,venc:now,cli:empresa||'—',val:valor,pgto,obs:(obsFinal||'').substring(0,80)});
     }
   }
   save();
@@ -1686,7 +1767,7 @@ function addBoleto(){
   const obs=document.getElementById('b-obs').value.trim();
   if(!cli||!val)return;
   const d=venc?new Date(venc+'T12:00:00').toLocaleDateString('pt-BR'):'—';
-  db.boletos.push({mes,venc:d,cli,val,pgto,obs});save();
+  db.boletos.push({id:uid(),mes,venc:d,cli,val,pgto,obs});save();
   ['b-venc','b-cli','b-val','b-obs'].forEach(id=>document.getElementById(id).value='');
   renderBoletos();
 }
@@ -1694,11 +1775,11 @@ function addBoleto(){
 function removerBoleto(idx){if(!confirm('Remover este boleto?'))return;db.boletos.splice(idx,1);save();renderBoletos();}
 
 function cadastrarProduto(){
-  const p={marca:document.getElementById('p-marca').value.trim(),nome:document.getElementById('p-nome').value.trim(),espec:document.getElementById('p-espec').value.trim(),linha:document.getElementById('p-linha').value,unid:document.getElementById('p-unid').value,qtd:parseInt(document.getElementById('p-qtd').value)||0,min:parseInt(document.getElementById('p-min').value)||0,max:parseInt(document.getElementById('p-max').value)||0,custo:parseFloat(document.getElementById('p-custo').value)||0,atacado:parseFloat(document.getElementById('p-atacado').value)||0,preco:parseFloat(document.getElementById('p-preco').value)||0};
+  const p={id:uid(),marca:document.getElementById('p-marca').value.trim(),nome:document.getElementById('p-nome').value.trim(),espec:document.getElementById('p-espec').value.trim(),linha:document.getElementById('p-linha').value,unid:document.getElementById('p-unid').value,qtd:parseInt(document.getElementById('p-qtd').value)||0,min:parseInt(document.getElementById('p-min').value)||0,max:parseInt(document.getElementById('p-max').value)||0,custo:parseFloat(document.getElementById('p-custo').value)||0,atacado:parseFloat(document.getElementById('p-atacado').value)||0,preco:parseFloat(document.getElementById('p-preco').value)||0};
   const fb=document.getElementById('p-feedback');
   if(!p.nome||!p.linha){fb.className='feedback err';fb.textContent='Preencha ao menos nome e linha.';return;}
   db.produtos.push(p);
-  if(p.qtd>0)db.movs.push({data:new Date().toLocaleDateString('pt-BR'),prod:p.nome,espec:p.espec,tipo:'Entrada',qtd:p.qtd,resp:'Sistema',empresa:'Estoque inicial',cnpj:'—',valor:0,pgto:'—',obs:'Cadastro inicial'});
+  if(p.qtd>0)db.movs.push({id:uid(),data:new Date().toLocaleDateString('pt-BR'),prod:p.nome,espec:p.espec,tipo:'Entrada',qtd:p.qtd,resp:'Sistema',empresa:'Estoque inicial',cnpj:'—',valor:0,pgto:'—',obs:'Cadastro inicial'});
   save();fb.className='feedback ok';fb.textContent='Produto cadastrado com sucesso!';
   ['p-marca','p-nome','p-espec','p-qtd','p-min','p-max','p-custo','p-atacado','p-preco'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('p-linha').value='';renderAll();
@@ -1829,7 +1910,7 @@ function salvarCompra(){
   const data=dataRaw?new Date(dataRaw+'T12:00:00').toLocaleDateString('pt-BR'):'Aguardando';
   if(!desc)return;
   if(!db.compras)db.compras=[];
-  db.compras.push({cod,desc,un,qtd,vcompra,vvenda,data});
+  db.compras.push({id:uid(),cod,desc,un,qtd,vcompra,vvenda,data});
   save();closeModalCompra();
   ['c-cod','c-desc','c-qtd','c-vcompra','c-vvenda','c-data'].forEach(id=>document.getElementById(id).value='');
   renderCompras();
@@ -1885,6 +1966,7 @@ function vincularProduto(prodIdx) {
   p.qtd += c.qtd;
   if (_vincularMarcar) c.data = new Date().toLocaleDateString('pt-BR');
   db.movs.push({
+    id: uid(),
     data: new Date().toLocaleDateString('pt-BR'),
     prod: p.nome, espec: p.espec, tipo: 'Entrada', qtd: c.qtd,
     resp: 'Sistema', empresa: _vincularMarcar ? 'Recebimento via Compras' : 'Entrada manual via Compras',
@@ -1900,12 +1982,14 @@ function vincularNovo() {
   const confirmCriar = confirm('Criar novo produto "' + c.desc + '" com ' + c.qtd + ' ' + c.un + ' no estoque?');
   if (!confirmCriar) return;
   const novoProd = {
+    id: uid(),
     marca: '—', nome: c.desc, espec: c.un, linha: 'RESISTÊNCIA', unid: c.un,
     qtd: c.qtd, min: 0, max: 0, custo: c.vcompra||0, atacado: 0, preco: c.vvenda||0
   };
   db.produtos.push(novoProd);
   if (_vincularMarcar) c.data = new Date().toLocaleDateString('pt-BR');
   db.movs.push({
+    id: uid(),
     data: new Date().toLocaleDateString('pt-BR'),
     prod: novoProd.nome, espec: novoProd.espec, tipo: 'Entrada', qtd: c.qtd,
     resp: 'Sistema', empresa: 'Novo produto via Compras', cnpj: '—',
@@ -2054,6 +2138,7 @@ function salvarEditBoleto() {
         mesParcela = mnames[d.getMonth()]+'/'+d.getFullYear();
       }
       db.boletos.push({
+        id: uid(),
         mes: mesParcela,
         venc: vencStr,
         cli: b.cli,
@@ -2478,6 +2563,7 @@ function salvarOrcamentoHistorico(){
     ('0'+new Date().getDate()).slice(-2)+'-'+
     String(db.orcamentos.length+1).padStart(3,'0');
   const orc={
+    id: uid(),
     num: numOrcamento,
     data:new Date().toLocaleDateString('pt-BR'),
     cliente:document.getElementById('orc-cli').value||'—',
@@ -2654,6 +2740,7 @@ function finalizarPedido(){
     if(p){
       p.qtd=Math.max(0,p.qtd-item.qtd);
       db.movs.push({
+        id:uid(),
         data:dataStr,prod:p.nome,espec:p.espec,tipo:'Saída',qtd:item.qtd,
         resp,empresa:cli,cnpj,valor:item.qtd*item.preco,pgto,
         obs:obs||'Pedido via Orçamento'
@@ -2672,16 +2759,16 @@ function finalizarPedido(){
       if(vencDate&&valParcela>0){
         const vencStr=new Date(vencDate+'T12:00:00').toLocaleDateString('pt-BR');
         const mesParcela=getMesFromDate(vencDate);
-        db.boletos.push({mes:mesParcela,venc:vencStr,cli,val:valParcela,pgto:'Boleto',obs:obs||'Pedido via Orçamento'});
+        db.boletos.push({id:uid(),mes:mesParcela,venc:vencStr,cli,val:valParcela,pgto:'Boleto',obs:obs||'Pedido via Orçamento'});
         parcelasAdicionadas++;
       }
     });
     // Se não preencheu parcelas, lança o total com vencimento em aberto
     if(parcelasAdicionadas===0){
-      db.boletos.push({mes,venc:'A definir',cli,val:total,pgto:'Boleto',obs:(obs||'Pedido via Orçamento')+' — vencimento a definir'});
+      db.boletos.push({id:uid(),mes,venc:'A definir',cli,val:total,pgto:'Boleto',obs:(obs||'Pedido via Orçamento')+' — vencimento a definir'});
     }
   } else {
-    db.boletos.push({mes,venc:dataStr,cli,val:total,pgto,obs:obs||'Pedido via Orçamento'});
+    db.boletos.push({id:uid(),mes,venc:dataStr,cli,val:total,pgto,obs:obs||'Pedido via Orçamento'});
   }
 
   // 3. Mark orcamento as confirmed
@@ -2696,6 +2783,7 @@ function finalizarPedido(){
   // 4. Add to retiradas (gestor control)
   if(!db.retiradas)db.retiradas=[];
   db.retiradas.push({
+    id:uid(),
     num:numOrc,
     dataPedido:dataStr,
     dataRetirada:dataRetiradaStr,
