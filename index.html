@@ -1010,8 +1010,32 @@ function uid(){
   return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,9);
 }
 
-function _chaveItem(item,i){
-  return (item && item.id) ? ('id:'+item.id) : ('idx:'+i);
+// Impressão digital do conteúdo de um objeto, independente da ordem dos campos
+// (JSON.stringify normal é sensível à ordem das chaves, o que pode mudar quando um
+// campo é editado — isso quebraria a comparação. Ordenando as chaves, o resultado
+// fica estável mesmo depois de uma edição de outros campos).
+function _fingerprint(obj){
+  if(obj===null||typeof obj!=='object')return JSON.stringify(obj);
+  if(Array.isArray(obj))return '['+obj.map(_fingerprint).join(',')+']';
+  const keys=Object.keys(obj).sort();
+  return '{'+keys.map(function(k){return JSON.stringify(k)+':'+_fingerprint(obj[k]);}).join(',')+'}';
+}
+
+// Identifica um item de forma ESTÁVEL, sem depender da posição dele no array.
+// IMPORTANTE: usar a posição (índice) como identidade é perigoso — se qualquer outra
+// pessoa adicionar/remover um item em QUALQUER lugar da lista, todos os itens depois
+// dele "mudam de posição", e o código antigo interpretava isso como "o item sumiu",
+// apagando registros que ninguém tinha tocado (foi o que aconteceu com o pedido do
+// BRC CASTRO). Por isso, priorizamos: 1) o id único, quando existe; 2) para produtos,
+// marca+nome+especificação (a própria aplicação já usa isso em outros lugares pra
+// identificar produto); 3) para orçamentos/retiradas, o número do pedido; 4) por
+// último, uma impressão digital do conteúdo (estável mesmo se a posição mudar).
+function _chaveItem(item,i,tipo){
+  if(!item)return 'vazio:'+i;
+  if(item.id)return 'id:'+item.id;
+  if(tipo==='produtos')return 'produto:'+(item.marca||'')+'|'+(item.nome||'')+'|'+(item.espec||'');
+  if((tipo==='orcamentos'||tipo==='retiradas')&&item.num)return tipo+':'+item.num;
+  return 'conteudo:'+_fingerprint(item);
 }
 
 // Mescla apenas ADIÇÕES de listas (usado quando chega uma atualização do Firebase
@@ -1019,48 +1043,73 @@ function _chaveItem(item,i){
 // que não perdemos itens novos de outros usuários enquanto salvamos os nossos).
 function mergeListsOnly(localDb, remoteData){
   const merged=JSON.parse(JSON.stringify(localDb||{}));
-  ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(key){
-    const remoteArr=(remoteData&&remoteData[key])||[];
-    const localArr=merged[key]||[];
-    const localKeys=new Set(localArr.map(_chaveItem));
-    const extra=remoteArr.filter(function(it,i){return !localKeys.has(_chaveItem(it,i));});
-    merged[key]=localArr.concat(extra);
+  ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(tipo){
+    const remoteArr=(remoteData&&remoteData[tipo])||[];
+    const localArr=merged[tipo]||[];
+    const chave=function(it,i){return _chaveItem(it,i,tipo);};
+    const localKeys=new Set(localArr.map(chave));
+    const extra=remoteArr.filter(function(it,i){return !localKeys.has(chave(it,i));});
+    merged[tipo]=localArr.concat(extra);
   });
   return merged;
 }
 
-// Mescla uma lista específica: parte do estado ATUAL do servidor (server), soma os itens
-// que existem em local mas não existiam no baseline nem no servidor (ou seja, itens novos
-// de verdade), e — só para produtos — reaplica a variação (delta) de estoque em cima do
-// valor mais atual do servidor, em vez de simplesmente sobrescrever com o valor local.
-function mergeList(server, local, base, isProdutos){
+// Mescla uma lista específica em 3 passos, partindo do estado ATUAL do servidor (server):
+// 1) remove itens que foram apagados localmente (existiam no baseline e não existem mais
+//    no local — ex: cancelar/remover um orçamento, boleto, compra...);
+// 2) reaplica, por cima da versão mais atual do servidor, os CAMPOS que foram alterados
+//    localmente desde o baseline (ex: status='Cancelado', edição de boleto...) — só os
+//    campos que realmente mudaram, então uma alteração concorrente de outro campo pelo
+//    servidor não é perdida;
+// 3) para produtos, a quantidade é tratada à parte: soma a variação (delta) de estoque
+//    em cima do valor mais atual do servidor, em vez de sobrescrever com o valor local
+//    (assim duas baixas de estoque concorrentes se somam em vez de uma apagar a outra);
+// 4) por fim, adiciona os itens que existem no local mas não existiam no baseline nem
+//    no servidor (itens novos de verdade).
+function mergeList(server, local, base, tipo){
   server=server||[];local=local||[];base=base||[];
-  const baseKeys=new Set(base.map(_chaveItem));
-  const serverKeys=new Set(server.map(_chaveItem));
-  const baseByKey={};base.forEach(function(it,i){baseByKey[_chaveItem(it,i)]=it;});
-  const localByKey={};local.forEach(function(it,i){localByKey[_chaveItem(it,i)]=it;});
+  const isProdutos=tipo==='produtos';
+  const chave=function(it,i){return _chaveItem(it,i,tipo);};
+  const baseKeys=new Set(base.map(chave));
+  const localKeys=new Set(local.map(chave));
+  const serverKeys=new Set(server.map(chave));
+  const baseByKey={};base.forEach(function(it,i){baseByKey[chave(it,i)]=it;});
+  const localByKey={};local.forEach(function(it,i){localByKey[chave(it,i)]=it;});
 
   const additions=local.filter(function(it,i){
-    const k=_chaveItem(it,i);
+    const k=chave(it,i);
     return !baseKeys.has(k)&&!serverKeys.has(k);
   });
 
-  let merged=server.concat(additions);
-
-  if(isProdutos){
-    merged=merged.map(function(sItem){
-      if(!sItem||!sItem.id)return sItem;
-      const k='id:'+sItem.id;
-      const bItem=baseByKey[k];
-      const lItem=localByKey[k];
-      if(bItem&&lItem&&typeof lItem.qtd==='number'&&typeof bItem.qtd==='number'){
-        const delta=lItem.qtd-bItem.qtd;
-        if(delta!==0)return Object.assign({},sItem,{qtd:(sItem.qtd||0)+delta});
+  const kept=server.filter(function(sItem,i){
+    const k=chave(sItem,i);
+    // existia no baseline e sumiu do local -> foi apagado/cancelado aqui, não ressuscita
+    if(baseByKey[k]&&!localKeys.has(k))return false;
+    return true;
+  }).map(function(sItem,i){
+    const k=chave(sItem,i);
+    const bItem=baseByKey[k];
+    const lItem=localByKey[k];
+    if(!bItem||!lItem)return sItem; // sem baseline pra comparar, mantém como está no servidor
+    let out=sItem;
+    Object.keys(lItem).forEach(function(field){
+      if(isProdutos&&field==='qtd')return; // qtd de produto é somado à parte, abaixo
+      if(JSON.stringify(lItem[field])!==JSON.stringify(bItem[field])){
+        if(out===sItem)out=Object.assign({},sItem);
+        out[field]=lItem[field];
       }
-      return sItem;
     });
-  }
-  return merged;
+    if(isProdutos&&typeof lItem.qtd==='number'&&typeof bItem.qtd==='number'){
+      const delta=lItem.qtd-bItem.qtd;
+      if(delta!==0){
+        if(out===sItem)out=Object.assign({},sItem);
+        out.qtd=(out.qtd||0)+delta;
+      }
+    }
+    return out;
+  });
+
+  return kept.concat(additions);
 }
 
 // Função usada DENTRO da transaction() do Firebase: recebe o valor mais recente do
@@ -1070,8 +1119,8 @@ function mergeList(server, local, base, isProdutos){
 function reconcile(currentData, local, base){
   currentData=currentData||{};local=local||{};base=base||{};
   const result=JSON.parse(JSON.stringify(currentData));
-  ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(key){
-    result[key]=mergeList(result[key],local[key],base[key],key==='produtos');
+  ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(tipo){
+    result[tipo]=mergeList(result[tipo],local[tipo],base[tipo],tipo);
   });
   if(local.usuarios)result.usuarios=local.usuarios;
   result._ts=Date.now();
