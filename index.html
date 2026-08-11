@@ -1284,6 +1284,29 @@ const COMPRAS_INIT=[
   {cod:'—',        desc:'Maxi Ducha 220V/5500W',                    vcompra:0,      un:'UN', qtd:200, vvenda:0,      data:'22/06/2026'},
 ];
 
+// Dá um id permanente a qualquer registro antigo que ainda não tenha (roda só uma
+// vez de fato — depois que os ids são gravados, a checagem não encontra mais nada
+// pra migrar e não escreve nada). Isso existe porque, sem id, dois registros com
+// conteúdo idêntico (ex: dois lançamentos de teste iguais) ficam indistinguíveis:
+// remover um deles não tinha efeito, porque o outro "tampava o buraco" na hora de
+// sincronizar. Roda dentro de uma transaction() pra não conflitar com outra gravação.
+let _migracaoIdsExecutada=false;
+function migrarIdsLegadoSeNecessario(){
+  if(_migracaoIdsExecutada)return;
+  _migracaoIdsExecutada=true;
+  if(typeof firebaseDB==='undefined'||!firebaseDB)return;
+  firebaseDB.ref('amber').transaction(function(currentData){
+    if(!currentData)return currentData;
+    let mudou=false;
+    ['produtos','movs','boletos','compras','orcamentos','retiradas'].forEach(function(tipo){
+      (currentData[tipo]||[]).forEach(function(item){
+        if(item&&!item.id){item.id=uid();mudou=true;}
+      });
+    });
+    return mudou?currentData:undefined; // undefined = aborta, nada precisava mudar
+  });
+}
+
 function load(){
   try {
     if (typeof firebaseDB === 'undefined' || !firebaseDB) throw new Error('Firebase not available');
@@ -1305,6 +1328,7 @@ function load(){
         if (!db.boletos) db.boletos = [];
         if (!db.movs) db.movs = [];
         if (!db.produtos) db.produtos = [];
+        migrarIdsLegadoSeNecessario();
       } else {
         db.produtos = [...DUCHA,...CABO,...OUTROS];
         db.movs = [...MOVS_INIT];
