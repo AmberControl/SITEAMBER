@@ -1633,7 +1633,7 @@ function registrarMov(){
 
 function populateRespSelect(){
   const sel=document.getElementById('h-resp');if(!sel)return;
-  const resps=[...new Set(db.movs.map(m=>m.resp))].filter(Boolean).sort();
+  const resps=[...new Set(db.movs.map(m=>m.tipo==='Saída'?resolverVendedorVenda(m):m.resp))].filter(Boolean).sort();
   const cur=sel.value;
   sel.innerHTML='<option value="">Todos os responsáveis</option>'+resps.map(r=>`<option value="${r}" ${r===cur?'selected':''}>${r}</option>`).join('');
 }
@@ -1662,12 +1662,12 @@ function renderHistorico(){
     .filter(m=>{
       // Vendedor only sees their own sales
       if(perfilAtual&&perfilAtual.tipo!=='gestor'){
-        if((m.resp||'').toLowerCase()!==perfilAtual.nome.toLowerCase())return false;
         if(m.tipo!=='Saída')return false;
+        if((resolverVendedorVenda(m)||'').toLowerCase()!==perfilAtual.nome.toLowerCase())return false;
       }
       if(busca&&!`${m.prod} ${m.empresa} ${m.obs}`.toLowerCase().includes(busca))return false;
       if(tipo&&m.tipo!==tipo)return false;
-      if(resp&&m.resp!==resp)return false;
+      if(resp&&(m.tipo==='Saída'?resolverVendedorVenda(m):m.resp)!==resp)return false;
       if(mes&&getMesAno(m.data)!==mes)return false;
       if(dataIni){const d=parseDateBR(m.data);const ini=new Date(dataIni+'T00:00:00');if(d<ini)return false;}
       if(dataFim){const d=parseDateBR(m.data);const fim=new Date(dataFim+'T23:59:59');if(d>fim)return false;}
@@ -1695,7 +1695,7 @@ function renderHistorico(){
       <td style="color:var(--text2)">${m.espec||'—'}</td>
       <td><span class="badge badge-${m.tipo==='Entrada'?'entrada':'saida'}">${m.tipo}</span></td>
       <td>${m.qtd}</td>
-      <td>${m.resp||'—'}</td>
+      <td>${m.tipo==='Saída'?(resolverVendedorVenda(m)||'—'):(m.resp||'—')}</td>
       <td>${m.empresa||'—'}</td>
       <td>${m.valor?fmt(m.valor):'—'}</td>
       <td style="color:var(--text3)">${m.pgto||'—'}</td>
@@ -1721,6 +1721,57 @@ function pgtoColor(pgto){
 
 function isRecebido(pgto){
   return pgto && pgto!=='Boleto';
+}
+
+// ── Vendedor correto de uma venda ───────────────────────────────────────────
+// Regra da gestora: a venda é sempre do vendedor que LANÇOU o orçamento,
+// independente de quem confirmou o pedido depois (a Lorena confirma pedidos
+// de todos os vendedores, então "resp" no Histórico pode ter o nome dela
+// mesmo quando quem vendeu foi outra pessoa). Sempre que existir um orçamento
+// CONFIRMADO com o mesmo cliente, usamos o vendedor de lá; só usamos o campo
+// "resp" do próprio movimento quando não há orçamento vinculado (ex.: um
+// lançamento manual feito em "Registrar Movimentação").
+function _normNomeCliente(c){
+  if(!c)return'';
+  let s=String(c).trim().toUpperCase();
+  s=s.replace(/[.,\-\/]/g,' ');
+  s=s.replace(/\b(LTDA|ME|EIRELI|E COM|COMERCIO|COMÉRCIO|S A|SA|IMPORTS?)\b/g,'');
+  s=s.replace(/\s+/g,' ').trim();
+  return s;
+}
+// Junta variações de grafia/maiúsculas do mesmo vendedor num nome só, e trata os
+// logins "Gestor 1"/"Gestor 2" como sendo a Lorena (ela também vende usando a
+// conta de gestora, além da própria conta de vendedora).
+function _normNomeVendedor(v){
+  if(!v)return'—';
+  const s=String(v).trim().toUpperCase();
+  if(s.includes('MARCELO'))return'Marcelo';
+  if(s.includes('ATIL'))return'Átila';
+  if(s.includes('CHARLES'))return'Charles';
+  if(s.includes('FERNANDO'))return'Fernando';
+  if(s.startsWith('GESTOR')||s==='LORENA')return'Lorena';
+  if(s.includes('RESERVA'))return'Reserva';
+  if(s.includes('SISTEMA'))return'Sistema';
+  return String(v).trim();
+}
+function resolverVendedorVenda(m){
+  if(!m)return'—';
+  const cn=_normNomeCliente(m.empresa);
+  if(!cn)return _normNomeVendedor(m.resp);
+  const cnNS=cn.replace(/\s+/g,'');
+  const orcs=(db.orcamentos||[]).filter(o=>o&&o.status==='Confirmado'&&o.vendedor&&o.vendedor!=='—'&&o.cliente);
+  let exato=null,parcial=null;
+  orcs.forEach(o=>{
+    const on=_normNomeCliente(o.cliente);
+    if(!on)return;
+    if(on===cn){exato=o.vendedor;return;}
+    if(!parcial&&on.length>=3&&cn.length>=3&&(on.includes(cn)||cn.includes(on))){parcial=o.vendedor;return;}
+    if(!parcial){
+      const onNS=on.replace(/\s+/g,'');
+      if(onNS.length>=3&&cnNS.length>=3&&(onNS.includes(cnNS)||cnNS.includes(onNS)))parcial=o.vendedor;
+    }
+  });
+  return _normNomeVendedor(exato||parcial||m.resp);
 }
 
 function populateRecMesSelect(){
@@ -1885,7 +1936,7 @@ function exportExcel(){
   XLSX.utils.book_append_sheet(wb,ws1,'Estoque');
   // Histórico
   const h=[['Data','Produto','Especificação','Tipo','Qtd','Responsável','Cliente/Empresa','Valor','Pagamento','Observação']];
-  db.movs.forEach(m=>h.push([m.data,m.prod,m.espec||'',m.tipo,m.qtd,m.resp||'',m.empresa||'',m.valor||0,m.pgto||'',m.obs||'']));
+  db.movs.forEach(m=>h.push([m.data,m.prod,m.espec||'',m.tipo,m.qtd,(m.tipo==='Saída'?resolverVendedorVenda(m):m.resp)||'',m.empresa||'',m.valor||0,m.pgto||'',m.obs||'']));
   const ws2=XLSX.utils.aoa_to_sheet(h);
   ws2['!cols']=[{wch:10},{wch:20},{wch:14},{wch:8},{wch:6},{wch:12},{wch:22},{wch:10},{wch:12},{wch:25}];
   XLSX.utils.book_append_sheet(wb,ws2,'Histórico');
@@ -2630,7 +2681,7 @@ function renderOrcHistorico(){
 function salvarOrcamentoHistorico(){
   if(!orcItems.length)return null;
   if(!db.orcamentos)db.orcamentos=[];
-    db.retiradas=[];
+  if(!db.retiradas)db.retiradas=[];
   const numOrcamento='ORC-'+new Date().getFullYear()+
     ('0'+(new Date().getMonth()+1)).slice(-2)+
     ('0'+new Date().getDate()).slice(-2)+'-'+
@@ -2793,6 +2844,10 @@ function finalizarPedido(){
   const cli=document.getElementById('orc-cli').value||'—';
   const cnpj=document.getElementById('orc-cnpj').value||'—';
   const resp=perfilAtual?perfilAtual.nome:'—';
+  // Vendedor da venda = quem lançou o orçamento, não necessariamente quem está
+  // confirmando o pedido agora (a Lorena confirma pedidos de todos).
+  const _orcVinculado=(window._pedidoOrcIdx!=null)?db.orcamentos[window._pedidoOrcIdx]:null;
+  const vendedorVenda=(_orcVinculado&&_orcVinculado.vendedor&&_orcVinculado.vendedor!=='—')?_orcVinculado.vendedor:resp;
   const total=orcItems.reduce((s,i)=>s+i.qtd*i.preco,0);
   const mes=getMesFromDate(dataRaw||new Date().toISOString().split('T')[0]);
 
@@ -2815,7 +2870,7 @@ function finalizarPedido(){
       db.movs.push({
         id:uid(),
         data:dataStr,prod:p.nome,espec:p.espec,tipo:'Saída',qtd:item.qtd,
-        resp,empresa:cli,cnpj,valor:item.qtd*item.preco,pgto,
+        resp:vendedorVenda,empresa:cli,cnpj,valor:item.qtd*item.preco,pgto,
         obs:obs||'Pedido via Orçamento'
       });
     }
@@ -2862,7 +2917,7 @@ function finalizarPedido(){
     dataRetirada:dataRetiradaStr,
     cliente:cli,
     cnpj,
-    vendedor:resp,
+    vendedor:vendedorVenda,
     itens:orcItems.map(i=>({...i})),
     total,
     pgto,
